@@ -1,1 +1,0 @@
-/usr/bin/c++     CMakeFiles/raytracer.dir/main.cpp.o CMakeFiles/raytracer.dir/external/simpleppm.cpp.o CMakeFiles/raytracer.dir/external/test_eigen.cpp.o CMakeFiles/raytracer.dir/external/test_json.cpp.o CMakeFiles/raytracer.dir/external/test_ppm.cpp.o  -o raytracer 
