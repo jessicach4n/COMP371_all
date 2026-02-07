@@ -1,9 +1,15 @@
 #pragma once
-#include "../external/json.hpp"
+
 #include <memory>
 #include <vector>
+#include <string>
+#include <Eigen/Dense>
 
-class Geometry; 
+#include "../external/json.hpp"
+#include "Geometry.h"
+#include "Camera.h"
+
+struct HitInfo;
 
 class RayTracer {
 public:
@@ -17,6 +23,8 @@ private:
     int width;
     int height;
     std::string outputFile;
+    Eigen::Vector3f backgroundColor;
+    Camera camera;
 
     std::vector<std::unique_ptr<Geometry>> objects;
 };

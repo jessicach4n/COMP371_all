@@ -1,5 +1,6 @@
 #pragma once
 #include <Eigen/Dense>
+#include "Ray.h"
 
 class Camera
 {
@@ -23,6 +24,5 @@ public:
         int w,
         int h);
 
-    // Returns a ray from the camera through pixel (x,y)
     Ray generateRay(int x, int y) const;
 };

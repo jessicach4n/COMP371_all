@@ -1,33 +1,40 @@
+#include <iostream>
+#include <string>
+#include <limits>
+#include <Eigen/Dense>
+
 #include "RayTracer.h"
 #include "Ray.h"
 #include "Sphere.h"
-#include <iostream>
-#include <string>
-#include <Eigen/Dense>
 #include "Geometry.h"
+#include "Camera.h"
+#include "../external/simpleppm.h"
 
-RayTracer::RayTracer(const nlohmann::json& j) {
-    // Constructor implementation (parse JSON and initialize scene)
-    parseOutput(j["output"][0]);
+RayTracer::RayTracer(const nlohmann::json& j) 
+    : width(j["output"][0]["size"][0]),
+      height(j["output"][0]["size"][1]),
+      outputFile(j["output"][0]["filename"]),
+      backgroundColor(
+          j["output"][0]["bkc"][0],
+          j["output"][0]["bkc"][1],
+          j["output"][0]["bkc"][2]
+      ),
+      camera(
+          Eigen::Vector3f(j["output"][0]["centre"][0], j["output"][0]["centre"][1], j["output"][0]["centre"][2]),
+          Eigen::Vector3f(j["output"][0]["lookat"][0], j["output"][0]["lookat"][1], j["output"][0]["lookat"][2]),
+          Eigen::Vector3f(j["output"][0]["up"][0], j["output"][0]["up"][1], j["output"][0]["up"][2]),
+          j["output"][0]["fov"],
+          j["output"][0]["size"][0],
+          j["output"][0]["size"][1]
+      )
+{
     parseGeometry(j["geometry"]);
-}
-
-void RayTracer::parseOutput(const nlohmann::json& outputJson) {
-    width = outputJson["size"][0];
-    height = outputJson["size"][0];
-    outputFile = outputJson["filename"];
-    // Camera centre
-    // Lookat
-    // Up
-    // Fov
-    // Background color
-
 }
 
 void RayTracer::parseGeometry(const nlohmann::json& geometryJson) {
     for (auto& geometry : geometryJson) {
         if (geometry["type"] == "sphere") {
-            Eigen::Vector3f centreCoordinates(
+            Eigen::Vector3f centre (
                 geometry["centre"][0],
                 geometry["centre"][1],
                 geometry["centre"][2]
@@ -36,7 +43,7 @@ void RayTracer::parseGeometry(const nlohmann::json& geometryJson) {
             float radius = geometry["radius"];
 
             objects.push_back(
-                std::make_unique<Sphere>(centreCoordinates, radius)
+                std::make_unique<Sphere>(centre, radius)
             );
 
         }
@@ -44,9 +51,40 @@ void RayTracer::parseGeometry(const nlohmann::json& geometryJson) {
 }
 
 void RayTracer::run() {
+    std::vector<double> buffer(width * height * 3);
+        
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-            // math in here...
+            // For each pixel
+            Ray ray = camera.generateRay(x, y); 
+            HitInfo closestHit;  
+            closestHit.t = std::numeric_limits<float>::infinity(); 
+            bool hitAnything = false; 
+
+            for (const auto& object : objects) {
+                HitInfo hit;
+                if (object->intersect(ray, hit)) {
+                    if (hit.t < closestHit.t) {
+                        closestHit = hit; // update closest hit
+                        hitAnything = true; // mark that we hit something
+                    }
+                }
+            }
+
+            Eigen::Vector3f color;
+            
+            if (hitAnything) {
+                color = Eigen::Vector3f(0.0f, 0.0f, 0.0f); // Black for hit
+            }
+            else {
+                color = backgroundColor; // Background color for no hit
+            }
+
+            int idx = 3 * (y * width + x);
+            buffer[idx + 0] = color.x();
+            buffer[idx + 1] = color.y();
+            buffer[idx + 2] = color.z();    
         }
     }
+    save_ppm(outputFile, buffer, width, height);
 }
