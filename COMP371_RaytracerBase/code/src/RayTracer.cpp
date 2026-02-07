@@ -8,7 +8,7 @@
 #include "Sphere.h"
 #include "Geometry.h"
 #include "Camera.h"
-#include "Rectangle.h"
+#include "Triangle.h"
 #include "../external/simpleppm.h"
 
 RayTracer::RayTracer(const nlohmann::json& j) 
@@ -48,30 +48,27 @@ void RayTracer::parseGeometry(const nlohmann::json& geometryJson) {
             );
         }
         else if (geometry["type"] == "rectangle") {
-            Eigen::Vector3f v1 (
-                geometry["p1"][0],
-                geometry["p1"][1],
-                geometry["p1"][2]
-            );
-            Eigen::Vector3f v2 (
-                geometry["p2"][0],
-                geometry["p2"][1],
-                geometry["p2"][2]
-            );
-            Eigen::Vector3f v3 (
-                geometry["p3"][0],
-                geometry["p3"][1],
-                geometry["p3"][2]
-            );
-            Eigen::Vector3f v4 (
-                geometry["p4"][0],
-                geometry["p4"][1],
-                geometry["p4"][2]
-            );
+            // Load vertices
+            Eigen::Vector3f v[4];
+            v[0] = Eigen::Vector3f(geometry["p1"][0], geometry["p1"][1], geometry["p1"][2]);
+            v[1] = Eigen::Vector3f(geometry["p2"][0], geometry["p2"][1], geometry["p2"][2]);
+            v[2] = Eigen::Vector3f(geometry["p3"][0], geometry["p3"][1], geometry["p3"][2]);
+            v[3] = Eigen::Vector3f(geometry["p4"][0], geometry["p4"][1], geometry["p4"][2]);
 
-            objects.push_back(
-                std::make_unique<Rectangle>(v1, v2, v3, v4)
-            );
+            // Compute two possible diagonals
+            Eigen::Vector3f d1 = v[2] - v[0];
+            Eigen::Vector3f d2 = v[3] - v[1];
+
+            Eigen::Vector3f normal = (v[1] - v[0]).cross(v[2] - v[0]);
+            if (normal.dot(Eigen::Vector3f(0,0,1)) < 0) { 
+                // Flip winding
+                objects.push_back(std::make_unique<Triangle>(v[0], v[2], v[1]));
+                objects.push_back(std::make_unique<Triangle>(v[0], v[3], v[2]));
+            } else {
+                objects.push_back(std::make_unique<Triangle>(v[0], v[1], v[2]));
+                objects.push_back(std::make_unique<Triangle>(v[0], v[2], v[3]));
+            }
+
         }
     }
 }
