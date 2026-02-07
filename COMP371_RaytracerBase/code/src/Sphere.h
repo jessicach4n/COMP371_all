@@ -1,6 +1,9 @@
 #pragma once
 #include <Eigen/Dense>
-#include "Geometry.h"
+
+class Geometry;
+class Ray;
+struct HitInfo;
 
 class Sphere : public Geometry
 {

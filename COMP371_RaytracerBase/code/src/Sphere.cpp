@@ -1,4 +1,6 @@
 #include "Sphere.h"
+#include "Geometry.h"
+#include "Ray.h"
 
 Sphere::Sphere(const Eigen::Vector3f& c, float r) : centre(c), radius(r) {};
 

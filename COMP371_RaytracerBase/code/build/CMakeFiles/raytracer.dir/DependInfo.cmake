@@ -1,27 +1,29 @@
-
-# Consider dependencies only in project.
-set(CMAKE_DEPENDS_IN_PROJECT_ONLY OFF)
-
 # The set of languages for which implicit dependencies are needed:
 set(CMAKE_DEPENDS_LANGUAGES
+  "CXX"
+  )
+# The set of files for implicit dependencies of each language:
+set(CMAKE_DEPENDS_CHECK_CXX
+  "/COMP371/external/simpleppm.cpp" "/COMP371/build/CMakeFiles/raytracer.dir/external/simpleppm.cpp.o"
+  "/COMP371/external/test_eigen.cpp" "/COMP371/build/CMakeFiles/raytracer.dir/external/test_eigen.cpp.o"
+  "/COMP371/external/test_json.cpp" "/COMP371/build/CMakeFiles/raytracer.dir/external/test_json.cpp.o"
+  "/COMP371/external/test_ppm.cpp" "/COMP371/build/CMakeFiles/raytracer.dir/external/test_ppm.cpp.o"
+  "/COMP371/main.cpp" "/COMP371/build/CMakeFiles/raytracer.dir/main.cpp.o"
+  "/COMP371/src/Ray.cpp" "/COMP371/build/CMakeFiles/raytracer.dir/src/Ray.cpp.o"
+  "/COMP371/src/RayTracer.cpp" "/COMP371/build/CMakeFiles/raytracer.dir/src/RayTracer.cpp.o"
+  "/COMP371/src/Sphere.cpp" "/COMP371/build/CMakeFiles/raytracer.dir/src/Sphere.cpp.o"
+  )
+set(CMAKE_CXX_COMPILER_ID "GNU")
+
+# The include file search paths:
+set(CMAKE_CXX_TARGET_INCLUDE_PATH
+  "/usr/include/eigen3"
+  "../src"
+  "../external"
   )
 
-# The set of dependency files which are needed:
-set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/Users/jessica_chan/Documents/GitHub/COMP371_all/COMP371_RaytracerBase/code/external/simpleppm.cpp" "CMakeFiles/raytracer.dir/external/simpleppm.cpp.o" "gcc" "CMakeFiles/raytracer.dir/external/simpleppm.cpp.o.d"
-  "/Users/jessica_chan/Documents/GitHub/COMP371_all/COMP371_RaytracerBase/code/external/test_eigen.cpp" "CMakeFiles/raytracer.dir/external/test_eigen.cpp.o" "gcc" "CMakeFiles/raytracer.dir/external/test_eigen.cpp.o.d"
-  "/Users/jessica_chan/Documents/GitHub/COMP371_all/COMP371_RaytracerBase/code/external/test_json.cpp" "CMakeFiles/raytracer.dir/external/test_json.cpp.o" "gcc" "CMakeFiles/raytracer.dir/external/test_json.cpp.o.d"
-  "/Users/jessica_chan/Documents/GitHub/COMP371_all/COMP371_RaytracerBase/code/external/test_ppm.cpp" "CMakeFiles/raytracer.dir/external/test_ppm.cpp.o" "gcc" "CMakeFiles/raytracer.dir/external/test_ppm.cpp.o.d"
-  "/Users/jessica_chan/Documents/GitHub/COMP371_all/COMP371_RaytracerBase/code/main.cpp" "CMakeFiles/raytracer.dir/main.cpp.o" "gcc" "CMakeFiles/raytracer.dir/main.cpp.o.d"
-  "/Users/jessica_chan/Documents/GitHub/COMP371_all/COMP371_RaytracerBase/code/src/RayTracer.cpp" "CMakeFiles/raytracer.dir/src/RayTracer.cpp.o" "gcc" "CMakeFiles/raytracer.dir/src/RayTracer.cpp.o.d"
-  )
-
-# Targets to which this target links which contain Fortran sources.
-set(CMAKE_Fortran_TARGET_LINKED_INFO_FILES
-  )
-
-# Targets to which this target links which contain Fortran sources.
-set(CMAKE_Fortran_TARGET_FORWARD_LINKED_INFO_FILES
+# Targets to which this target links.
+set(CMAKE_TARGET_LINKED_INFO_FILES
   )
 
 # Fortran module output directory.

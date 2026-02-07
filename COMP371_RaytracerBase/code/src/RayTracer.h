@@ -3,7 +3,7 @@
 #include <memory>
 #include <vector>
 
-class Geometry;
+class Geometry; 
 
 class RayTracer {
 public:

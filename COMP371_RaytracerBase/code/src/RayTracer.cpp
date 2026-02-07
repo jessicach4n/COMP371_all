@@ -1,10 +1,10 @@
 #include "RayTracer.h"
+#include "Ray.h"
 #include "Sphere.h"
 #include <iostream>
 #include <string>
 #include <Eigen/Dense>
-
-class Ray;
+#include "Geometry.h"
 
 RayTracer::RayTracer(const nlohmann::json& j) {
     // Constructor implementation (parse JSON and initialize scene)
@@ -44,5 +44,9 @@ void RayTracer::parseGeometry(const nlohmann::json& geometryJson) {
 }
 
 void RayTracer::run() {
-    // Ray tracing implementation
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            // math in here...
+        }
+    }
 }
