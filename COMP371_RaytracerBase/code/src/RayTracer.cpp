@@ -8,6 +8,7 @@
 #include "Sphere.h"
 #include "Geometry.h"
 #include "Camera.h"
+#include "Rectangle.h"
 #include "../external/simpleppm.h"
 
 RayTracer::RayTracer(const nlohmann::json& j) 
@@ -45,7 +46,32 @@ void RayTracer::parseGeometry(const nlohmann::json& geometryJson) {
             objects.push_back(
                 std::make_unique<Sphere>(centre, radius)
             );
+        }
+        else if (geometry["type"] == "rectangle") {
+            Eigen::Vector3f v1 (
+                geometry["p1"][0],
+                geometry["p1"][1],
+                geometry["p1"][2]
+            );
+            Eigen::Vector3f v2 (
+                geometry["p2"][0],
+                geometry["p2"][1],
+                geometry["p2"][2]
+            );
+            Eigen::Vector3f v3 (
+                geometry["p3"][0],
+                geometry["p3"][1],
+                geometry["p3"][2]
+            );
+            Eigen::Vector3f v4 (
+                geometry["p4"][0],
+                geometry["p4"][1],
+                geometry["p4"][2]
+            );
 
+            objects.push_back(
+                std::make_unique<Rectangle>(v1, v2, v3, v4)
+            );
         }
     }
 }

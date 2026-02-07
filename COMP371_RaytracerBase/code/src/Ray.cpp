@@ -22,3 +22,4 @@ Eigen::Vector3f Ray::getPointAt(float t) const
 {
     return origin + t * direction;
 }
+        
