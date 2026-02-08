@@ -11,7 +11,8 @@ Camera::Camera(
 : origin(centre), fov(f), width(w), height(h)
 {
     aspectRatio = float(width) / float(height);
-    forward = (lookat - centre).normalized();
+    // lookat is a vectorv for the forward direction
+    forward = lookat.normalized();
     right = forward.cross(up).normalized();
     cameraUp = right.cross(forward).normalized();
 }
