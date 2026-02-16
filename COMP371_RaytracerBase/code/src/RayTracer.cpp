@@ -74,7 +74,8 @@ void RayTracer::parseGeometry(const nlohmann::json& geometryJson) {
 }
 
 void RayTracer::run() {
-    std::vector<double> buffer(width * height * 3);
+    size_t pixelCount = static_cast<size_t>(width) * height * 3;
+    std::vector<double> buffer(pixelCount);
         
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
@@ -103,10 +104,10 @@ void RayTracer::run() {
                 color = backgroundColor; // Background color for no hit
             }
 
-            int idx = 3 * (y * width + x);
+            size_t idx = 3ull * (static_cast<size_t>(y) * width + x);
             buffer[idx + 0] = color.x();
-            buffer[idx + 1] = color.y();
-            buffer[idx + 2] = color.z();    
+            buffer[idx + static_cast<size_t>(1)] = color.y();
+            buffer[idx + static_cast<size_t>(2)] = color.z();
         }
     }
     save_ppm(outputFile, buffer, width, height);
