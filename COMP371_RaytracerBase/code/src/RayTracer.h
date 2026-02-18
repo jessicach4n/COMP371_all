@@ -17,13 +17,13 @@ public:
     void run();
 
 private:
-    void parseOutput(const nlohmann::json& outputJson);
     void parseGeometry(const nlohmann::json& geometryJson);
 
     int width;
     int height;
     std::string outputFile;
     Eigen::Vector3f backgroundColor;
+    Eigen::Vector3f hitColor;
     Camera camera;
 
     std::vector<std::unique_ptr<Geometry>> objects;

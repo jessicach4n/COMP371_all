@@ -29,6 +29,12 @@ RayTracer::RayTracer(const nlohmann::json& j)
           j["output"][0]["size"][1]
       )
 {
+    if (backgroundColor == Eigen::Vector3f(0.0f, 0.0f, 0.0f)) {
+        hitColor = Eigen::Vector3f(1.0f, 1.0f, 1.0f);
+    }
+    else {
+        hitColor = Eigen::Vector3f(0.0f, 0.0f, 0.0f);
+    }
     parseGeometry(j["geometry"]);
 }
 
@@ -98,7 +104,7 @@ void RayTracer::run() {
             Eigen::Vector3f color;
             
             if (hitAnything) {
-                color = Eigen::Vector3f(0.0f, 0.0f, 0.0f); // Black for hit
+                color = hitColor;
             }
             else {
                 color = backgroundColor; // Background color for no hit
