@@ -96,9 +96,8 @@ capsule02_EXTERNAL_OBJECTS =
 capsule02: CMakeFiles/capsule02.dir/capsule02.cpp.o
 capsule02: CMakeFiles/capsule02.dir/build.make
 capsule02: /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk/System/Library/Frameworks/OpenGL.framework
-capsule02: /opt/local/lib/libGLEW.dylib
+capsule02: /usr/local/lib/libGLEW.2.3.1.dylib
 capsule02: /opt/local/lib/libglfw.3.4.dylib
-capsule02: /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk/System/Library/Frameworks/OpenGL.framework
 capsule02: CMakeFiles/capsule02.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/Users/jessica_chan/Documents/GitHub/COMP371_all/Lab_capsules/capsule2/code/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable capsule02"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/capsule02.dir/link.txt --verbose=$(VERBOSE)

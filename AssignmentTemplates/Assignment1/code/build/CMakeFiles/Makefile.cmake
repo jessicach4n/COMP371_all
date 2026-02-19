@@ -7,7 +7,7 @@ set(CMAKE_DEPENDS_GENERATOR "Unix Makefiles")
 # The top level Makefile was generated from the following files:
 set(CMAKE_MAKEFILE_DEPENDS
   "CMakeCache.txt"
-  "/Users/jessica_chan/Documents/GitHub/COMP371_all/Lab_capsules/capsule2/code/CMakeLists.txt"
+  "/Users/jessica_chan/Documents/GitHub/COMP371_all/AssignmentTemplates/Assignment1/code/CMakeLists.txt"
   "CMakeFiles/3.31.7/CMakeCCompiler.cmake"
   "CMakeFiles/3.31.7/CMakeCXXCompiler.cmake"
   "CMakeFiles/3.31.7/CMakeSystem.cmake"
@@ -75,5 +75,5 @@ set(CMAKE_MAKEFILE_PRODUCTS
 
 # Dependency information for all targets:
 set(CMAKE_DEPEND_INFO_FILES
-  "CMakeFiles/capsule02.dir/DependInfo.cmake"
+  "CMakeFiles/Assignment1.dir/DependInfo.cmake"
   )
