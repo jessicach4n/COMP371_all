@@ -21,10 +21,9 @@ private:
 
     int width;
     int height;
-    std::string outputFile;
+    std::vector<nlohmann::json> outputs;
     Eigen::Vector3f backgroundColor;
     Eigen::Vector3f hitColor;
-    Camera camera;
 
     std::vector<std::unique_ptr<Geometry>> objects;
 };
