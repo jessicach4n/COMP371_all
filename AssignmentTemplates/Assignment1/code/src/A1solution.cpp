@@ -12,37 +12,57 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+// OpenGL error string conversion
+const char *getErrorString(GLenum error)
+{
+    switch (error)
+    {
+    case GL_NO_ERROR:
+        return "GL_NO_ERROR";
+    case GL_INVALID_ENUM:
+        return "GL_INVALID_ENUM";
+    case GL_INVALID_VALUE:
+        return "GL_INVALID_VALUE";
+    case GL_INVALID_OPERATION:
+        return "GL_INVALID_OPERATION";
+    case GL_OUT_OF_MEMORY:
+        return "GL_OUT_OF_MEMORY";
+    default:
+        return "UNKNOWN_ERROR";
+    }
+}
+
 // Debug OpenGL calls
 void debug_gl(int place)
 {
     GLenum e = glGetError();
     if (e != GL_NO_ERROR)
     {
-        // std::cout<<"We have an error! "<<place<<" "<<e<<" "<<getErrorString(e)<<std::endl;
-        std::cout << "We have an error! " << place << " " << (void *)e << std::endl;
+        std::cout << "We have an error! " << place << " " << e << " " << getErrorString(e) << std::endl;
     }
 }
 
 const char *getVertexShaderPhong()
 {
     return R"(
-    #version 330 core
-    layout(location = 0) in vec3 aPos;
-    layout(location = 1) in vec3 aNormal;
+        #version 330 core
+        layout(location = 0) in vec3 aPos;
+        layout(location = 1) in vec3 aNormal;
 
-    out vec3 FragPos;
-    out vec3 Normal;
+        out vec3 fragPos;
+        out vec3 normal;
 
-    uniform mat4 model;
-    uniform mat4 view;
-    uniform mat4 projection;
+        uniform mat4 projection;
+        uniform mat4 modelview;
+        uniform mat3 normalMat;
 
-    void main()
-    {
-        FragPos = vec3(model * vec4(aPos, 1.0));
-        Normal = mat3(transpose(inverse(model))) * aNormal;  
-        gl_Position = projection * view * vec4(FragPos, 1.0);
-    }
+        void main()
+        {
+            vec4 vertPos4 = modelview * vec4(aPos, 1.0);
+            fragPos = vertPos4.xyz;
+            normal = normalMat * aNormal;     
+            gl_Position = projection * vertPos4;
+        }
     )";
 }
 
@@ -50,29 +70,29 @@ const char *getFragmentShaderPhong()
 {
     return R"(
     #version 330 core
-    in vec3 FragPos;
-    in vec3 Normal;
+    in vec3 fragPos;
+    in vec3 normal;
 
     out vec4 FragColor;
 
     uniform vec3 lightPos;
-    uniform vec3 viewPos;
 
     void main()
     {
+        vec3 norm = normalize(normal);
+
         // Ambient
         vec3 ambient = vec3(0.1, 0.05, 0.05);
 
         // Diffuse
-        vec3 norm = normalize(Normal);
-        vec3 lightDir = normalize(lightPos - FragPos);
+        vec3 lightDir = normalize(lightPos - fragPos);    
         float diff = max(dot(norm, lightDir), 0.0);
         vec3 diffuse = diff * vec3(1.0, 0.5, 0.5);
 
         // Specular
-        vec3 viewDir = normalize(viewPos - FragPos);
+        vec3 viewDir = normalize(-fragPos);
         vec3 reflectDir = reflect(-lightDir, norm);
-        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 5.0);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 5.0); // shininess fixed at 5
         vec3 specular = spec * vec3(0.3, 0.3, 0.3);
 
         FragColor = vec4(ambient + diffuse + specular, 1.0);
@@ -186,8 +206,15 @@ void A1solution::run(char *filename)
 {
     std::ifstream in(filename);
 
-    // Read modelview matrix
+    if (!in.is_open()) {
+        std::cerr << "Failed to open file: " << filename << std::endl;
+        return;
+    }
+
+    // Read matrices
     glm::mat4 modelview;
+    glm::mat4 projection;
+
     for (int i = 0; i < 4; i++)
     {
         for (int j = 0; j < 4; j++)
@@ -196,8 +223,6 @@ void A1solution::run(char *filename)
         }
     }
 
-    // Read projection matrix
-    glm::mat4 projection;
     for (int i = 0; i < 4; i++)
     {
         for (int j = 0; j < 4; j++)
@@ -228,14 +253,53 @@ void A1solution::run(char *filename)
         in >> triangles[i].x >> triangles[i].y >> triangles[i].z;
     }
 
-    // i. Open an OpenGL window (similarly with the capsules provided)
-    // Initialize GLFW and OpenGL version
-    glfwInit();
+    in.close();
+
+    // Compute vertex normals
+    std::vector<glm::vec3> vertexNormals(N, glm::vec3(0.0f));
+    for (auto &t : triangles) {
+        glm::vec3 v0 = vertices[static_cast<int>(t.x)];
+        glm::vec3 v1 = vertices[static_cast<int>(t.y)];
+        glm::vec3 v2 = vertices[static_cast<int>(t.z)]; 
+
+        glm::vec3 faceNormal = glm::normalize(glm::cross(v1 - v0, v2 - v0));
+        vertexNormals[static_cast<int>(t.x)] += faceNormal;
+        vertexNormals[static_cast<int>(t.y)] += faceNormal;
+        vertexNormals[static_cast<int>(t.z)] += faceNormal;
+    }
+    for (auto &n : vertexNormals) n = glm::normalize(n);
+
+    // Flatten vertex data for OpenGL
+    std::vector<float> vertexData;
+    for (size_t i = 0; i < vertices.size(); i++) {
+        glm::vec3 &v = vertices[i];
+        vertexData.push_back(v.x);
+        vertexData.push_back(v.y);
+        vertexData.push_back(v.z);
+
+        // Placeholder normals (all pointing +z)
+        vertexData.push_back(0.0f);
+        vertexData.push_back(0.0f);
+        vertexData.push_back(1.0f);
+    }
+
+    // Flatten triangle indices for OpenGL
+    std::vector<unsigned int> indices;
+    for (auto &t : triangles) {
+        indices.push_back(static_cast<unsigned int>(t.x));
+        indices.push_back(static_cast<unsigned int>(t.y));
+        indices.push_back(static_cast<unsigned int>(t.z));
+    }
+
+    // Initialize GLFW
+    if (!glfwInit()) {
+        std::cerr << "Failed to initialize GLFW" << std::endl;
+        return;
+    }
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
     // Create Window and rendering context using GLFW, resolution is 800x600
     GLFWwindow *window = glfwCreateWindow(width, height, "Comp371 - Assignment 01", NULL, NULL);
@@ -243,7 +307,7 @@ void A1solution::run(char *filename)
     {
         std::cerr << "Failed to create GLFW window" << std::endl;
         glfwTerminate();
-        // return -1;
+        return;
     }
     glfwMakeContextCurrent(window);
     glfwSetKeyCallback(window, keyCallback);
@@ -256,86 +320,65 @@ void A1solution::run(char *filename)
         glfwTerminate();
         // return -1;
     }
-    // Black background
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
-    // ii. Loads and Renders a 3D model in an interactive loop
-    // Compile and link shaders here ...
-    int vertexColorProgram = compileAndLinkShaders(getVertexShaderPhong(), getFragmentShaderPhong());
-    // int voronoiProgram = compileAndLinkShaders(getVertexShaderVoronoi(), getFragmentShaderVoronoi());
+    glEnable(GL_DEPTH_TEST); // Enable depth testing
 
-    int shaderPrograms[] = {vertexColorProgram};
+    // Grey background
+    glClearColor(0.7f, 0.7f, 0.7f, 1.0f);
+
+    // Compile and load shaders
+    int phongShader = compileAndLinkShaders(getVertexShaderPhong(), getFragmentShaderPhong());
+    int shaderPrograms[] = {phongShader};
     int currentShader = 0;
 
-    debug_gl(0);
-
+    // Upload vertex data to GPU
     unsigned int VAO, VBO, CBO, EBO;
-    unsigned int PBO[3];
-    createRenderingData(VAO, VBO, CBO, PBO, EBO);
+    glGenVertexArrays(1, &VAO);
+    glBindVertexArray(VAO);
 
-    glViewport(0, 0, 800, 600);
+    glGenBuffers(1, &VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, vertexData.size() * sizeof(float), vertexData.data(), GL_STATIC_DRAW);
 
-    // S key press for shader mode
-    bool sKeyPressedLastFrame = false;
-    // W key press for wireframe mode
-    bool wKeyPressedLastFrame = false;
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glGenBuffers(1, &EBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+
+    glBindVertexArray(0);
 
     // Entering Main Loop
     while (!glfwWindowShouldClose(window))
     {
-        // Each frame, reset color of each pixel to glClearColor
-        glClear(GL_COLOR_BUFFER_BIT);
+        // Each frame, reset color and depth of each pixel
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glUseProgram(shaderPrograms[currentShader]);
 
-        unsigned int modelLoc = glGetUniformLocation(shaderPrograms[currentShader], "model");
-        unsigned int viewLoc = glGetUniformLocation(shaderPrograms[currentShader], "view");
-        unsigned int projLoc = glGetUniformLocation(shaderPrograms[currentShader], "projection");
+        unsigned int modelLoc = glGetUniformLocation(shaderPrograms[currentShader], "modelview");
+        unsigned int projLoc  = glGetUniformLocation(shaderPrograms[currentShader], "projection");
+        unsigned int normalLoc = glGetUniformLocation(shaderPrograms[currentShader], "normalMat");
+        unsigned int lightLoc = glGetUniformLocation(shaderPrograms[currentShader], "lightPos");
 
-        glm::mat4 model = glm::mat4(1.0f);
+        glm::mat3 normalMat = glm::transpose(glm::inverse(glm::mat3(modelview)));
 
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, &model[0][0]);
-        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, &modelview[0][0]);
-        glUniformMatrix4fv(projLoc, 1, GL_FALSE, &projection[0][0]);
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelview));
+        glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
+        glUniformMatrix3fv(normalLoc, 1, GL_FALSE, glm::value_ptr(normalMat));
 
-        glUniform3f(glGetUniformLocation(shaderPrograms[currentShader], "lightPos"), 1.0f, 1.0f, 2.0f);
-        glUniform3f(glGetUniformLocation(shaderPrograms[currentShader], "viewPos"), 0.0f, 0.0f, 2.0f);
+        glUniform3f(lightLoc, 0.0f, 0.0f, 1.0f); // Light position in view space
 
-        glBindVertexArray(VAO); // seeing as we only have a single VAO there's no need to bind it every time, but we'll do so to keep things a bit more organized
+        // Draw
+        glBindVertexArray(VAO);
+        glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
 
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-        glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_INT, 0);
         glfwSwapBuffers(window);
-
-        // Detect inputs
         glfwPollEvents();
-
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        {
-            glfwSetWindowShouldClose(window, true);
-        }
-
-        // Listens to the keyboard and upon oppressing ‘s’ it will toggle between 4 different
-        // rendering modes and
-
-        // pressing ‘s’ it will toggle between 4 different rendering modes
-        bool sKeyPressedNow = glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS;
-
-        if (sKeyPressedNow && !sKeyPressedLastFrame)
-        {
-            currentShader = (currentShader + 1) % 2; // change to 4
-        }
-        sKeyPressedLastFrame = sKeyPressedNow;
-
-        // pressing ‘w’ will toggle between the regular shading and a
-        // wireframe mode.
-
-        bool wKeyPressedNow = glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS;
-
-        if (wKeyPressedNow && !wKeyPressedLastFrame)
-        {
-            // currentShader = (currentShader + 1) % 2; // change to 4
-        }
     }
 
     // Shutdown GLFW
