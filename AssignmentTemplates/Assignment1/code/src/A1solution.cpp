@@ -186,7 +186,8 @@ void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods
     }
 }
 
-void A1solution::run(char *filename)
+// Function to read input file and populate data structures
+void readInputFile(const char *filename, glm::mat4 &modelview, glm::mat4 &projection, int &width, int &height, std::vector<glm::vec3> &vertices, std::vector<glm::vec3> &triangles)
 {
     std::ifstream in(filename);
 
@@ -196,9 +197,6 @@ void A1solution::run(char *filename)
     }
 
     // Read matrices
-    glm::mat4 modelview;
-    glm::mat4 projection;
-
     for (int i = 0; i < 4; i++)
     {
         for (int j = 0; j < 4; j++)
@@ -216,13 +214,12 @@ void A1solution::run(char *filename)
     }
 
     // Read width and height
-    int width, height;
     in >> width >> height;
 
     // Read vertices
     int N;
     in >> N;
-    std::vector<glm::vec3> vertices(N);
+    vertices.resize(N);
     for (int i = 0; i < N; i++)
     {
         in >> vertices[i].x >> vertices[i].y >> vertices[i].z;
@@ -231,20 +228,23 @@ void A1solution::run(char *filename)
     // Read triangles
     int M;
     in >> M;
-    std::vector<glm::vec3> triangles(M);
+    triangles.resize(M);
     for (int i = 0; i < M; i++)
     {
         in >> triangles[i].x >> triangles[i].y >> triangles[i].z;
     }
 
     in.close();
+}
 
-    // Compute vertex normals
-    std::vector<glm::vec3> vertexNormals(N, glm::vec3(0.0f));
+// Function to compute vertex normals from triangle data
+void computeVertexNormals(const std::vector<glm::vec3> &vertices, const std::vector<glm::vec3> &triangles, std::vector<glm::vec3> &vertexNormals)
+{
+    vertexNormals.resize(vertices.size(), glm::vec3(0.0f));
     for (auto &t : triangles) {
         glm::vec3 v0 = vertices[static_cast<int>(t.x)];
         glm::vec3 v1 = vertices[static_cast<int>(t.y)];
-        glm::vec3 v2 = vertices[static_cast<int>(t.z)]; 
+        glm::vec3 v2 = vertices[static_cast<int>(t.z)];
 
         glm::vec3 faceNormal = glm::normalize(glm::cross(v1 - v0, v2 - v0));
         vertexNormals[static_cast<int>(t.x)] += faceNormal;
@@ -252,28 +252,52 @@ void A1solution::run(char *filename)
         vertexNormals[static_cast<int>(t.z)] += faceNormal;
     }
     for (auto &n : vertexNormals) n = glm::normalize(n);
+}
 
-    // Flatten vertex data for OpenGL
-    std::vector<float> vertexData;
-    for (size_t i = 0; i < vertices.size(); i++) {
-        glm::vec3 &v = vertices[i];
-        vertexData.push_back(v.x);
-        vertexData.push_back(v.y);
-        vertexData.push_back(v.z);
+// Function to flatten vertex data into a single array for OpenGL
+void flattenVertexData(const std::vector<glm::vec3> &vertices, std::vector<float> &vertexData) {
+        for (size_t i = 0; i < vertices.size(); i++) {
+            const glm::vec3 &v = vertices[i];
+            vertexData.push_back(v.x);
+            vertexData.push_back(v.y);
+            vertexData.push_back(v.z);
 
-        // Placeholder normals (all pointing +z)
-        vertexData.push_back(0.0f);
-        vertexData.push_back(0.0f);
-        vertexData.push_back(1.0f);
-    }
+            // Placeholder normals (all pointing +z)
+            vertexData.push_back(0.0f);
+            vertexData.push_back(0.0f);
+            vertexData.push_back(1.0f);
+        }
+}
 
-    // Flatten triangle indices for OpenGL
-    std::vector<unsigned int> indices;
-    for (auto &t : triangles) {
+// Function to flatten triangle indices into a single array for OpenGL
+void flattenTriangleIndices(const std::vector<glm::vec3> &triangles, std::vector<unsigned int> &indices) {
+    for (const auto &t : triangles) {
         indices.push_back(static_cast<unsigned int>(t.x));
         indices.push_back(static_cast<unsigned int>(t.y));
         indices.push_back(static_cast<unsigned int>(t.z));
     }
+}
+
+void A1solution::run(char *filename)
+{
+    glm::mat4 modelview, projection;
+    int width, height;
+    std::vector<glm::vec3> vertices;
+    std::vector<glm::vec3> triangles;
+
+    readInputFile(filename, modelview, projection, width, height, vertices, triangles);
+
+    // Compute vertex normals
+    std::vector<glm::vec3> vertexNormals;
+    computeVertexNormals(vertices, triangles, vertexNormals);
+
+    // Flatten vertex data for OpenGL
+    std::vector<float> vertexData;
+    flattenVertexData(vertices, vertexData);
+
+    // Flatten triangle indices for OpenGL
+    std::vector<unsigned int> indices;
+    flattenTriangleIndices(triangles, indices);
 
     // Initialize GLFW
     if (!glfwInit()) {
@@ -281,6 +305,7 @@ void A1solution::run(char *filename)
         return;
     }
 
+    // Set OpenGL version to 3.3 and use core profile
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
@@ -293,6 +318,8 @@ void A1solution::run(char *filename)
         glfwTerminate();
         return;
     }
+
+    // Make the window's context current and set key callback
     glfwMakeContextCurrent(window);
     glfwSetKeyCallback(window, keyCallback);
 
@@ -302,7 +329,7 @@ void A1solution::run(char *filename)
     {
         std::cerr << "Failed to create GLEW" << std::endl;
         glfwTerminate();
-        // return -1;
+        return;
     }
 
     glEnable(GL_DEPTH_TEST); // Enable depth testing
@@ -342,25 +369,29 @@ void A1solution::run(char *filename)
         // Each frame, reset color and depth of each pixel
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glUseProgram(shaderPrograms[currentShader]);
+        glUseProgram(shaderPrograms[currentShader]); // Use the current shader program
 
+        // Set shader uniforms
         unsigned int modelLoc = glGetUniformLocation(shaderPrograms[currentShader], "modelview");
         unsigned int projLoc  = glGetUniformLocation(shaderPrograms[currentShader], "projection");
         unsigned int normalLoc = glGetUniformLocation(shaderPrograms[currentShader], "normalMat");
         unsigned int lightLoc = glGetUniformLocation(shaderPrograms[currentShader], "lightPos");
 
+        // Compute normal matrix (transpose of inverse of upper-left 3x3 of modelview)
         glm::mat3 normalMat = glm::transpose(glm::inverse(glm::mat3(modelview)));
 
+        // Upload matrices to shader
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelview));
         glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
         glUniformMatrix3fv(normalLoc, 1, GL_FALSE, glm::value_ptr(normalMat));
 
         glUniform3f(lightLoc, 0.0f, 0.0f, 1.0f); // Light position in view space
 
-        // Draw
+        // Draw the triangles
         glBindVertexArray(VAO);
         glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
 
+        // Swap front and back buffers and poll for events
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
