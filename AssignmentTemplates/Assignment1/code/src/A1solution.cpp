@@ -154,51 +154,35 @@ int compileAndLinkShaders(const char *vertexShaderSource, const char *fragmentSh
     return shaderProgram;
 }
 
-void createRenderingData(unsigned int &VAO, unsigned int &VBO, unsigned int &CBO, unsigned int PBO[], unsigned int &EBO)
-{
-
-    // Define and upload geometry to the GPU here ...
-    // create VAO + VBO
-    float vertices[] = {
-        -0.5f, -0.5f, 0.0f, 0.0f, 0.0f, 1.0f,
-        0.5f, -0.5f, 0.0f, 0.0f, 0.0f, 1.0f,
-        0.0f, 0.5f, 0.0f, 0.0f, 0.0f, 1.0f};
-
-    glGenVertexArrays(1, &VAO);
-    glBindVertexArray(VAO);
-
-    glGenBuffers(1, &VBO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0); // position
-    glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float))); // normal
-    glEnableVertexAttribArray(1);
-
-    unsigned int indices[] = {0, 1, 2};
-    glGenBuffers(1, &EBO);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-
-    glBindVertexArray(0);
-}
-
 // Shader program IDs
 int currentShader = 0;
 int shaderPrograms[2];
+int mode = 0; // 0 for fill, 1 for wireframe
 
+// Key callback function to handle input
 void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
+    // Close window on Escape key press
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
     {
         glfwSetWindowShouldClose(window, true);
     }
 
-    if (key == GLFW_KEY_W && action == GLFW_PRESS)
+    // Switch shader on S key press
+    if (key == GLFW_KEY_S && action == GLFW_PRESS) 
     {
         currentShader = (currentShader + 1) % 2;
+    }
+
+    // Switch to wireframe mode on W key press
+    if (key == GLFW_KEY_W && action == GLFW_PRESS)
+    {   
+        mode = (mode + 1) % 2;
+        if (mode == 0) {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        } else {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);  
+        }
     }
 }
 
