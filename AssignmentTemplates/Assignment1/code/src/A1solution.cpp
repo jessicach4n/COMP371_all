@@ -76,24 +76,25 @@ const char *getFragmentShaderPhong()
     out vec4 FragColor;
 
     uniform vec3 lightPos;
+    uniform vec3 lightColor;
 
     void main()
     {
         vec3 norm = normalize(normal);
 
         // Ambient
-        vec3 ambient = vec3(0.1, 0.05, 0.05);
+        vec3 ambient = vec3(0.1, 0.05, 0.05) * lightColor;
 
         // Diffuse
         vec3 lightDir = normalize(lightPos - fragPos);    
         float diff = max(dot(norm, lightDir), 0.0);
-        vec3 diffuse = diff * vec3(1.0, 0.5, 0.5);
+        vec3 diffuse = diff * lightColor * vec3(1.0, 0.5, 0.5);
 
         // Specular
         vec3 viewDir = normalize(-fragPos);
         vec3 reflectDir = reflect(-lightDir, norm);
-        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 5.0); // shininess fixed at 5
-        vec3 specular = spec * vec3(0.3, 0.3, 0.3);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 5.0);
+        vec3 specular = spec * lightColor * vec3(0.3, 0.3, 0.3);
 
         FragColor = vec4(ambient + diffuse + specular, 1.0);
     }
@@ -254,19 +255,20 @@ void computeVertexNormals(const std::vector<glm::vec3> &vertices, const std::vec
     for (auto &n : vertexNormals) n = glm::normalize(n);
 }
 
-// Function to flatten vertex data into a single array for OpenGL
-void flattenVertexData(const std::vector<glm::vec3> &vertices, std::vector<float> &vertexData) {
-        for (size_t i = 0; i < vertices.size(); i++) {
-            const glm::vec3 &v = vertices[i];
-            vertexData.push_back(v.x);
-            vertexData.push_back(v.y);
-            vertexData.push_back(v.z);
+// Function to flatten vertex data (positions + normals) into a single array for OpenGL
+void flattenVertexData(const std::vector<glm::vec3> &vertices, const std::vector<glm::vec3> &normals, std::vector<float> &vertexData) {
+    vertexData.reserve(vertexData.size() + vertices.size() * 6);
+    for (size_t i = 0; i < vertices.size(); i++) {
+        const glm::vec3 &v = vertices[i];
+        const glm::vec3 &n = normals[i];
+        vertexData.push_back(v.x);
+        vertexData.push_back(v.y);
+        vertexData.push_back(v.z);
 
-            // Placeholder normals (all pointing +z)
-            vertexData.push_back(0.0f);
-            vertexData.push_back(0.0f);
-            vertexData.push_back(1.0f);
-        }
+        vertexData.push_back(n.x);
+        vertexData.push_back(n.y);
+        vertexData.push_back(n.z);
+    }
 }
 
 // Function to flatten triangle indices into a single array for OpenGL
@@ -291,9 +293,9 @@ void A1solution::run(char *filename)
     std::vector<glm::vec3> vertexNormals;
     computeVertexNormals(vertices, triangles, vertexNormals);
 
-    // Flatten vertex data for OpenGL
+    // Flatten vertex data for OpenGL (include computed normals)
     std::vector<float> vertexData;
-    flattenVertexData(vertices, vertexData);
+    flattenVertexData(vertices, vertexNormals, vertexData);
 
     // Flatten triangle indices for OpenGL
     std::vector<unsigned int> indices;
@@ -376,6 +378,8 @@ void A1solution::run(char *filename)
         unsigned int projLoc  = glGetUniformLocation(shaderPrograms[currentShader], "projection");
         unsigned int normalLoc = glGetUniformLocation(shaderPrograms[currentShader], "normalMat");
         unsigned int lightLoc = glGetUniformLocation(shaderPrograms[currentShader], "lightPos");
+        unsigned int lightColorLoc = glGetUniformLocation(shaderPrograms[currentShader], "lightColor");
+        glUniform3f(lightColorLoc, 1.0f, 1.0f, 1.0f); // Set light color to white at full intensity
 
         // Compute normal matrix (transpose of inverse of upper-left 3x3 of modelview)
         glm::mat3 normalMat = glm::transpose(glm::inverse(glm::mat3(modelview)));
