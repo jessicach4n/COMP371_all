@@ -101,6 +101,153 @@ const char *getFragmentShaderPhong()
     )";
 }
 
+const char *getVertexShaderFlat()
+{
+    return R"(
+        #version 330 core
+        layout(location = 0) in vec3 aPos;
+        layout(location = 1) in vec3 aNormal;
+
+        out vec3 fragPos;
+        flat out vec3 normal;
+
+        uniform mat4 projection;
+        uniform mat4 modelview;
+        uniform mat3 normalMat;
+
+        void main()
+        {
+            vec4 vertPos4 = modelview * vec4(aPos, 1.0);
+            fragPos = vertPos4.xyz;
+            normal = normalMat * aNormal;     
+            gl_Position = projection * vertPos4;
+        }
+    )";
+}
+
+const char *getFragmentShaderFlat()
+{
+    return R"(
+    #version 330 core
+    in vec3 fragPos;
+    flat in vec3 normal;
+
+    out vec4 FragColor;
+
+    uniform vec3 lightPos;
+    uniform vec3 lightColor;
+
+    void main()
+    {
+        vec3 norm = normalize(normal);
+
+        // Ambient
+        vec3 ambient = vec3(0.1, 0.05, 0.05) * lightColor;
+
+        // Diffuse
+        vec3 lightDir = normalize(lightPos - fragPos);    
+        float diff = max(dot(norm, lightDir), 0.0);
+        vec3 diffuse = diff * lightColor * vec3(1.0, 0.5, 0.5);
+
+        // Specular
+        vec3 viewDir = normalize(-fragPos);
+        vec3 reflectDir = reflect(-lightDir, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 5.0);
+        vec3 specular = spec * lightColor * vec3(0.3, 0.3, 0.3);
+
+        FragColor = vec4(ambient + diffuse + specular, 1.0);
+    }
+    )";
+}
+
+const char *getVertexShaderCircle()
+{
+    return R"(
+        #version 330 core
+        layout(location = 0) in vec3 aPos;
+        layout(location = 1) in vec3 aNormal;
+        layout(location = 2) in vec3 aBary;
+
+        out vec3 fragPos;
+        out vec3 normal;
+        out vec3 bary;
+
+        uniform mat4 projection;
+        uniform mat4 modelview;
+        uniform mat3 normalMat;
+
+        void main()
+        {
+            vec4 vertPos4 = modelview * vec4(aPos, 1.0);
+            fragPos = vertPos4.xyz;
+            normal = normalMat * aNormal;     
+            bary = aBary;
+            gl_Position = projection * vertPos4;
+        }
+    )";
+}
+
+const char *getFragmentShaderCircle()
+{
+    return R"(
+    #version 330 core
+    
+    in vec3 fragPos;
+    in vec3 normal;
+    in vec3 bary;
+
+    out vec4 FragColor;
+
+    uniform vec3 lightPos;
+    uniform vec3 lightColor;
+
+    void main() 
+    {        
+        // Distance from centroid in barycentric space
+        vec3 d = bary - vec3(1.0/3.0);
+        float distFromCenter = dot(d, d); // squared distance
+
+        float radius = 0.17; 
+        bool insideCircle = distFromCenter < radius;
+        
+        vec3 norm = normalize(normal);
+
+        vec3 ambient;
+        vec3 diffuseColor;
+        vec3 specular = vec3(0.0);
+
+        if (insideCircle) 
+        {
+            ambient = vec3(0.05, 0.05, 0.1) * lightColor;
+            diffuseColor = vec3(0.5, 0.5, 1.0);
+        }
+        else
+        {
+            ambient = vec3(0.1, 0.05, 0.05) * lightColor;
+            diffuseColor = vec3(1.0, 0.5, 0.5);
+        }
+
+        vec3 lightDir = normalize(lightPos - fragPos);
+        float diff = max(dot(norm, lightDir), 0.0);
+        vec3 diffuse = diff * lightColor * diffuseColor;
+
+        if (insideCircle)
+        {
+            specular = vec3(0.0);
+        }
+        else 
+        {
+            vec3 viewDir = normalize(-fragPos);
+            vec3 reflectDir = reflect(-lightDir, norm);
+            float spec = pow(max(dot(viewDir, reflectDir), 0.0), 5.0);
+            specular = spec * lightColor * vec3(0.3);
+        }
+
+        FragColor = vec4(ambient + diffuse + specular, 1.0);
+    }
+    )";
+}
+
 int compileAndLinkShaders(const char *vertexShaderSource, const char *fragmentShaderSource)
 {
     // compile and link shader program
@@ -157,7 +304,6 @@ int compileAndLinkShaders(const char *vertexShaderSource, const char *fragmentSh
 
 // Shader program IDs
 int currentShader = 0;
-int shaderPrograms[2];
 int mode = 0; // 0 for fill, 1 for wireframe
 
 // Key callback function to handle input
@@ -170,10 +316,12 @@ void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods
     }
 
     // Switch shader on S key press
-    if (key == GLFW_KEY_S && action == GLFW_PRESS) 
-    {
-        currentShader = (currentShader + 1) % 2;
-    }
+    // if (key == GLFW_KEY_S && action == GLFW_PRESS) 
+    // {
+    //     std::cout << "Switching shader..." << std::endl;
+    //     currentShader = 1 - currentShader;
+    //     std::cout << "Switched to " << (currentShader == 0 ? "Phong" : "Flat") << " shader." << std::endl;
+    // }
 
     // Switch to wireframe mode on W key press
     if (key == GLFW_KEY_W && action == GLFW_PRESS)
@@ -238,9 +386,11 @@ void readInputFile(const char *filename, glm::mat4 &modelview, glm::mat4 &projec
     in.close();
 }
 
-// Function to compute vertex normals from triangle data
-void computeVertexNormals(const std::vector<glm::vec3> &vertices, const std::vector<glm::vec3> &triangles, std::vector<glm::vec3> &vertexNormals)
-{
+void phongShader(const std::vector<glm::vec3> &vertices, const std::vector<glm::vec3> &triangles, std::vector<glm::vec3> &vertexNormals, std::vector<float> &vertexData, std::vector<unsigned int> &indices) {
+    vertexData.clear();
+    indices.clear();
+    vertexNormals.clear();
+
     vertexNormals.resize(vertices.size(), glm::vec3(0.0f));
     for (auto &t : triangles) {
         glm::vec3 v0 = vertices[static_cast<int>(t.x)];
@@ -253,14 +403,11 @@ void computeVertexNormals(const std::vector<glm::vec3> &vertices, const std::vec
         vertexNormals[static_cast<int>(t.z)] += faceNormal;
     }
     for (auto &n : vertexNormals) n = glm::normalize(n);
-}
 
-// Function to flatten vertex data (positions + normals) into a single array for OpenGL
-void flattenVertexData(const std::vector<glm::vec3> &vertices, const std::vector<glm::vec3> &normals, std::vector<float> &vertexData) {
-    vertexData.reserve(vertexData.size() + vertices.size() * 6);
+    vertexData.reserve(vertices.size() * 6);
     for (size_t i = 0; i < vertices.size(); i++) {
         const glm::vec3 &v = vertices[i];
-        const glm::vec3 &n = normals[i];
+        const glm::vec3 &n = vertexNormals[i];
         vertexData.push_back(v.x);
         vertexData.push_back(v.y);
         vertexData.push_back(v.z);
@@ -269,15 +416,151 @@ void flattenVertexData(const std::vector<glm::vec3> &vertices, const std::vector
         vertexData.push_back(n.y);
         vertexData.push_back(n.z);
     }
-}
 
-// Function to flatten triangle indices into a single array for OpenGL
-void flattenTriangleIndices(const std::vector<glm::vec3> &triangles, std::vector<unsigned int> &indices) {
     for (const auto &t : triangles) {
         indices.push_back(static_cast<unsigned int>(t.x));
         indices.push_back(static_cast<unsigned int>(t.y));
         indices.push_back(static_cast<unsigned int>(t.z));
     }
+}
+
+void flatShader(const std::vector<glm::vec3> &vertices, const std::vector<glm::vec3> &triangles, std::vector<glm::vec3> &faceNormals, std::vector<float> &vertexData, std::vector<unsigned int> &indices) {
+    vertexData.clear();
+    indices.clear();
+    faceNormals.clear();
+
+    unsigned int indexCounter = 0;
+
+    for (size_t i = 0; i < triangles.size(); i++)
+    {
+        // Get triangle vertex indices
+        int i0 = static_cast<int>(triangles[i].x);
+        int i1 = static_cast<int>(triangles[i].y);
+        int i2 = static_cast<int>(triangles[i].z);
+
+        glm::vec3 v0 = vertices[i0];
+        glm::vec3 v1 = vertices[i1];
+        glm::vec3 v2 = vertices[i2];
+
+        // Compute face normal
+        glm::vec3 faceNormal = glm::normalize(glm::cross(v1 - v0, v2 - v0));
+        faceNormals.push_back(faceNormal);
+
+        // Duplicate vertices with same normal
+        glm::vec3 triangleVerts[3] = {v0, v1, v2};
+
+        for (int j = 0; j < 3; j++)
+        {
+            const glm::vec3 &v = triangleVerts[j];
+
+            // Position
+            vertexData.push_back(v.x);
+            vertexData.push_back(v.y);
+            vertexData.push_back(v.z);
+
+            // Same face normal for all 3 vertices
+            vertexData.push_back(faceNormal.x);
+            vertexData.push_back(faceNormal.y);
+            vertexData.push_back(faceNormal.z);
+
+            indices.push_back(indexCounter++);
+        }
+    }
+}
+
+void circleShader(const std::vector<glm::vec3> &vertices, const std::vector<glm::vec3> &triangles, std::vector<glm::vec3> &vertexNormals, std::vector<float> &vertexData, std::vector<unsigned int> &indices) {
+    vertexData.clear();
+    indices.clear();
+
+    for (size_t i = 0; i < triangles.size(); i++) {
+        // Get triangle vertices
+        int i0 = static_cast<int>(triangles[i].x);
+        int i1 = static_cast<int>(triangles[i].y);
+        int i2 = static_cast<int>(triangles[i].z);
+
+        glm::vec3 verts[3]   = { vertices[i0], vertices[i1], vertices[i2] };
+        glm::vec3 normals[3] = { vertexNormals[i0], vertexNormals[i1], vertexNormals[i2] };
+
+        float barycentricCoordinates[3][3] = {
+            {1.0f, 0.0f, 0.0f}, // Entry 1 (1,0,0)
+            {0.0f, 1.0f, 0.0f}, // Entry 2 (0,1,0)
+            {0.0f, 0.0f, 1.0f}  // Entry 3 (0,0,1)
+        };
+
+        for (int j = 0; j < 3; j++) {
+            vertexData.push_back(verts[j].x);
+            vertexData.push_back(verts[j].y);
+            vertexData.push_back(verts[j].z);
+            vertexData.push_back(normals[j].x);
+            vertexData.push_back(normals[j].y);
+            vertexData.push_back(normals[j].z);
+            vertexData.push_back(barycentricCoordinates[j][0]);
+            vertexData.push_back(barycentricCoordinates[j][1]);
+            vertexData.push_back(barycentricCoordinates[j][2]);
+        }
+
+        // Add indices for the triangle 
+        unsigned int baseIndex = static_cast<unsigned int>(i) * 3;
+        indices.push_back(baseIndex);
+        indices.push_back(baseIndex + 1);
+        indices.push_back(baseIndex + 2);
+    }
+
+}
+
+void createRenderingData(unsigned int *VAOs, unsigned int *VBOs, unsigned int *EBOs, const std::vector<float> &phongVertexData, const std::vector<float> &flatVertexData, const std::vector<float> &circleVertexData, const std::vector<unsigned int> &phongIndices, const std::vector<unsigned int> &flatIndices, const std::vector<unsigned int> &circleIndices) {
+    glGenVertexArrays(3, VAOs);
+    glGenBuffers(3, VBOs);
+    glGenBuffers(3, EBOs);
+
+    // Phong VAO
+    glBindVertexArray(VAOs[0]);
+    glBindBuffer(GL_ARRAY_BUFFER, VBOs[0]);
+    glBufferData(GL_ARRAY_BUFFER, phongVertexData.size() * sizeof(float), phongVertexData.data(), GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBOs[0]);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, phongIndices.size() * sizeof(unsigned int), phongIndices.data(), GL_STATIC_DRAW);
+
+
+    // Flat VAO
+    glBindVertexArray(VAOs[1]);
+    glBindBuffer(GL_ARRAY_BUFFER, VBOs[1]);
+    glBufferData(GL_ARRAY_BUFFER, flatVertexData.size() * sizeof(float), flatVertexData.data(), GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBOs[1]);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, flatIndices.size() * sizeof(unsigned int), flatIndices.data(), GL_STATIC_DRAW);
+
+
+    // Circle VAO
+    glBindVertexArray(VAOs[2]);
+    glBindBuffer(GL_ARRAY_BUFFER, VBOs[2]);
+    glBufferData(GL_ARRAY_BUFFER, circleVertexData.size() * sizeof(float), circleVertexData.data(), GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)0); // position
+    glEnableVertexAttribArray(0);
+
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)(3 * sizeof(float))); // normal
+    glEnableVertexAttribArray(1);
+
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)(6 * sizeof(float))); // barycentric
+    glEnableVertexAttribArray(2);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBOs[2]);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, circleIndices.size() * sizeof(unsigned int), circleIndices.data(), GL_STATIC_DRAW);
+    
+    glBindVertexArray(0);
 }
 
 void A1solution::run(char *filename)
@@ -286,21 +569,25 @@ void A1solution::run(char *filename)
     int width, height;
     std::vector<glm::vec3> vertices;
     std::vector<glm::vec3> triangles;
+    currentShader = 2;
 
     readInputFile(filename, modelview, projection, width, height, vertices, triangles);
 
-    // Compute vertex normals
-    std::vector<glm::vec3> vertexNormals;
-    computeVertexNormals(vertices, triangles, vertexNormals);
+    std::vector<glm::vec3> phongVertexNormals;
+    std::vector<float> phongVertexData;
+    std::vector<unsigned int> phongIndices;
 
-    // Flatten vertex data for OpenGL (include computed normals)
-    std::vector<float> vertexData;
-    flattenVertexData(vertices, vertexNormals, vertexData);
+    phongShader(vertices, triangles, phongVertexNormals, phongVertexData, phongIndices);
 
-    // Flatten triangle indices for OpenGL
-    std::vector<unsigned int> indices;
-    flattenTriangleIndices(triangles, indices);
-
+    std::vector<glm::vec3> flatFaceNormals;
+    std::vector<float> flatVertexData;
+    std::vector<unsigned int> flatIndices;
+    flatShader(vertices, triangles, flatFaceNormals, flatVertexData, flatIndices);
+ 
+    std::vector<float> circleVertexData;
+    std::vector<unsigned int> circleIndices;
+    circleShader(vertices, triangles, phongVertexNormals, circleVertexData, circleIndices); 
+    
     // Initialize GLFW
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW" << std::endl;
@@ -341,30 +628,15 @@ void A1solution::run(char *filename)
 
     // Compile and load shaders
     int phongShader = compileAndLinkShaders(getVertexShaderPhong(), getFragmentShaderPhong());
-    int shaderPrograms[] = {phongShader};
-    int currentShader = 0;
+    int flatShader = compileAndLinkShaders(getVertexShaderFlat(), getFragmentShaderFlat());
+    int circleShader = compileAndLinkShaders(getVertexShaderCircle(), getFragmentShaderCircle());
+    int shaderPrograms[] = {phongShader, flatShader, circleShader};
+    int indexCount[] = {static_cast<int>(phongIndices.size()), static_cast<int>(flatIndices.size()), static_cast<int>(circleIndices.size())};
 
     // Upload vertex data to GPU
-    unsigned int VAO, VBO, CBO, EBO;
-    glGenVertexArrays(1, &VAO);
-    glBindVertexArray(VAO);
-
-    glGenBuffers(1, &VBO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, vertexData.size() * sizeof(float), vertexData.data(), GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    glGenBuffers(1, &EBO);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
-
-    glBindVertexArray(0);
-
+    unsigned int VAOs[3], VBOs[3], EBOs[3];
+    createRenderingData(VAOs, VBOs, EBOs, phongVertexData, flatVertexData, circleVertexData, phongIndices, flatIndices, circleIndices);
+    
     // Entering Main Loop
     while (!glfwWindowShouldClose(window))
     {
@@ -392,8 +664,8 @@ void A1solution::run(char *filename)
         glUniform3f(lightLoc, 0.0f, 0.0f, 1.0f); // Light position in view space
 
         // Draw the triangles
-        glBindVertexArray(VAO);
-        glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
+        glBindVertexArray(VAOs[currentShader]);
+        glDrawElements(GL_TRIANGLES, indexCount[currentShader], GL_UNSIGNED_INT, 0);
 
         // Swap front and back buffers and poll for events
         glfwSwapBuffers(window);
