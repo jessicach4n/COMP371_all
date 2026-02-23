@@ -1,6 +1,7 @@
 #include "A1solution.h"
 #include <iostream>
 #include <fstream>
+#include <vector>
 
 #define GLEW_STATIC 1
 
