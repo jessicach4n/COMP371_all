@@ -42,6 +42,7 @@ void debug_gl(int place)
     }
 }
 
+// Vertex shader source for Phong
 const char *getVertexShaderPhong()
 {
     return R"(
@@ -109,7 +110,7 @@ const char *getVertexShaderFlat()
         layout(location = 1) in vec3 aNormal;
 
         out vec3 fragPos;
-        flat out vec3 normal;
+        flat out vec3 normal;  // <-- must match fragment shader
 
         uniform mat4 projection;
         uniform mat4 modelview;
@@ -119,7 +120,7 @@ const char *getVertexShaderFlat()
         {
             vec4 vertPos4 = modelview * vec4(aPos, 1.0);
             fragPos = vertPos4.xyz;
-            normal = normalMat * aNormal;     
+            normal = normalMat * aNormal;
             gl_Position = projection * vertPos4;
         }
     )";
@@ -160,7 +161,8 @@ const char *getFragmentShaderFlat()
     )";
 }
 
-const char *getVertexShaderCircle()
+// Vertex shader source for Circle and Voronoi 
+const char *getVertexShaderBary()
 {
     return R"(
         #version 330 core
@@ -248,6 +250,59 @@ const char *getFragmentShaderCircle()
     )";
 }
 
+const char *getFragmentShaderVoronoi()
+{
+    return R"(
+    #version 330 core
+
+    in vec3 fragPos;
+    in vec3 normal;
+    in vec3 bary;
+
+    out vec4 FragColor;
+
+    uniform vec3 lightPos;
+    uniform vec3 lightColor;
+
+    void main()
+    {
+        // Closest vertex = highest barycentric coordinate
+        vec3 diffuseColor;
+        vec3 ambientColor;
+        if (bary.x >= bary.y && bary.x >= bary.z)
+        {
+            diffuseColor = vec3(1.0, 0.5, 0.5);
+            ambientColor = vec3(0.1, 0.05, 0.05);
+        }
+        else if (bary.y >= bary.z)
+        {
+            diffuseColor = vec3(0.5, 1.0, 0.5);
+            ambientColor = vec3(0.05, 0.1, 0.05);
+        }
+        else
+        {
+            diffuseColor = vec3(0.5, 0.5, 1.0);
+            ambientColor = vec3(0.05, 0.05, 0.1);
+        }
+
+        vec3 norm = normalize(normal);
+        vec3 lightDir = normalize(lightPos - fragPos);
+
+        vec3 ambient = ambientColor * lightColor;
+
+        float diff = max(dot(norm, lightDir), 0.0);
+        vec3 diffuse = diff * lightColor * diffuseColor;
+
+        vec3 viewDir = normalize(-fragPos);
+        vec3 reflectDir = reflect(-lightDir, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 5.0);
+        vec3 specular = spec * lightColor * vec3(0.3);
+
+        FragColor = vec4(ambient + diffuse + specular, 1.0);
+    }
+    )";
+}
+
 int compileAndLinkShaders(const char *vertexShaderSource, const char *fragmentShaderSource)
 {
     // compile and link shader program
@@ -302,45 +357,20 @@ int compileAndLinkShaders(const char *vertexShaderSource, const char *fragmentSh
     return shaderProgram;
 }
 
-// Shader program IDs
-int currentShader = 0;
-int mode = 0; // 0 for fill, 1 for wireframe
-
-// Key callback function to handle input
-void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
-{
-    // Close window on Escape key press
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-    {
-        glfwSetWindowShouldClose(window, true);
-    }
-
-    // Switch shader on S key press
-    // if (key == GLFW_KEY_S && action == GLFW_PRESS) 
-    // {
-    //     std::cout << "Switching shader..." << std::endl;
-    //     currentShader = 1 - currentShader;
-    //     std::cout << "Switched to " << (currentShader == 0 ? "Phong" : "Flat") << " shader." << std::endl;
-    // }
-
-    // Switch to wireframe mode on W key press
-    if (key == GLFW_KEY_W && action == GLFW_PRESS)
-    {   
-        mode = (mode + 1) % 2;
-        if (mode == 0) {
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-        } else {
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);  
-        }
-    }
-}
-
 // Function to read input file and populate data structures
-void readInputFile(const char *filename, glm::mat4 &modelview, glm::mat4 &projection, int &width, int &height, std::vector<glm::vec3> &vertices, std::vector<glm::vec3> &triangles)
+void readInputFile(
+    const char *filename, 
+    glm::mat4 &modelview, 
+    glm::mat4 &projection, 
+    int &width, 
+    int &height, 
+    std::vector<glm::vec3> &vertices, 
+    std::vector<glm::vec3> &triangles)
 {
     std::ifstream in(filename);
 
-    if (!in.is_open()) {
+    if (!in.is_open())
+    {
         std::cerr << "Failed to open file: " << filename << std::endl;
         return;
     }
@@ -386,13 +416,17 @@ void readInputFile(const char *filename, glm::mat4 &modelview, glm::mat4 &projec
     in.close();
 }
 
-void phongShader(const std::vector<glm::vec3> &vertices, const std::vector<glm::vec3> &triangles, std::vector<glm::vec3> &vertexNormals, std::vector<float> &vertexData, std::vector<unsigned int> &indices) {
-    vertexData.clear();
-    indices.clear();
-    vertexNormals.clear();
+void buildPhongData(
+    const std::vector<glm::vec3> &vertices, 
+    const std::vector<glm::vec3> &triangles, 
+    std::vector<glm::vec3> &vertexNormals,
+    std::vector<float> &vertexData, 
+    std::vector<unsigned int> &indices)
+{
+    vertexNormals.assign(vertices.size(), glm::vec3(0.0f));
 
-    vertexNormals.resize(vertices.size(), glm::vec3(0.0f));
-    for (auto &t : triangles) {
+    for (auto &t : triangles)
+    {
         glm::vec3 v0 = vertices[static_cast<int>(t.x)];
         glm::vec3 v1 = vertices[static_cast<int>(t.y)];
         glm::vec3 v2 = vertices[static_cast<int>(t.z)];
@@ -402,33 +436,34 @@ void phongShader(const std::vector<glm::vec3> &vertices, const std::vector<glm::
         vertexNormals[static_cast<int>(t.y)] += faceNormal;
         vertexNormals[static_cast<int>(t.z)] += faceNormal;
     }
-    for (auto &n : vertexNormals) n = glm::normalize(n);
+    for (auto &n : vertexNormals)
+        n = glm::normalize(n);
 
     vertexData.reserve(vertices.size() * 6);
-    for (size_t i = 0; i < vertices.size(); i++) {
-        const glm::vec3 &v = vertices[i];
-        const glm::vec3 &n = vertexNormals[i];
-        vertexData.push_back(v.x);
-        vertexData.push_back(v.y);
-        vertexData.push_back(v.z);
-
-        vertexData.push_back(n.x);
-        vertexData.push_back(n.y);
-        vertexData.push_back(n.z);
+    for (size_t i = 0; i < vertices.size(); i++)
+    {
+        vertexData.push_back(vertices[i].x);
+        vertexData.push_back(vertices[i].y);
+        vertexData.push_back(vertices[i].z);
+        vertexData.push_back(vertexNormals[i].x);
+        vertexData.push_back(vertexNormals[i].y);
+        vertexData.push_back(vertexNormals[i].z);
     }
 
-    for (const auto &t : triangles) {
+    for (const auto &t : triangles)
+    {
         indices.push_back(static_cast<unsigned int>(t.x));
         indices.push_back(static_cast<unsigned int>(t.y));
         indices.push_back(static_cast<unsigned int>(t.z));
     }
 }
 
-void flatShader(const std::vector<glm::vec3> &vertices, const std::vector<glm::vec3> &triangles, std::vector<glm::vec3> &faceNormals, std::vector<float> &vertexData, std::vector<unsigned int> &indices) {
-    vertexData.clear();
-    indices.clear();
-    faceNormals.clear();
-
+void buildFlatData(
+    const std::vector<glm::vec3> &vertices, 
+    const std::vector<glm::vec3> &triangles, 
+    std::vector<float> &vertexData, 
+    std::vector<unsigned int> &indices)
+{
     unsigned int indexCounter = 0;
 
     for (size_t i = 0; i < triangles.size(); i++)
@@ -444,7 +479,6 @@ void flatShader(const std::vector<glm::vec3> &vertices, const std::vector<glm::v
 
         // Compute face normal
         glm::vec3 faceNormal = glm::normalize(glm::cross(v1 - v0, v2 - v0));
-        faceNormals.push_back(faceNormal);
 
         // Duplicate vertices with same normal
         glm::vec3 triangleVerts[3] = {v0, v1, v2};
@@ -468,98 +502,104 @@ void flatShader(const std::vector<glm::vec3> &vertices, const std::vector<glm::v
     }
 }
 
-void circleShader(const std::vector<glm::vec3> &vertices, const std::vector<glm::vec3> &triangles, std::vector<glm::vec3> &vertexNormals, std::vector<float> &vertexData, std::vector<unsigned int> &indices) {
-    vertexData.clear();
-    indices.clear();
+// Circle and Voronoi shaders will use the same vertex data, so we can generate it together
+void buildBaryData(
+    const std::vector<glm::vec3> &vertices, 
+    const std::vector<glm::vec3> &triangles,
+    std::vector<glm::vec3> &vertexNormals,
+    std::vector<float> &vertexData, 
+    std::vector<unsigned int> &indices)
+{
+    static const float bary[3][3] = {
+        {1.0f, 0.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    };
 
-    for (size_t i = 0; i < triangles.size(); i++) {
+    for (size_t i = 0; i < triangles.size(); i++)
+    {
         // Get triangle vertices
-        int i0 = static_cast<int>(triangles[i].x);
-        int i1 = static_cast<int>(triangles[i].y);
-        int i2 = static_cast<int>(triangles[i].z);
+        int idx[3] = {
+            (int)triangles[i].x, 
+            (int)triangles[i].y, 
+            (int)triangles[i].z
+        };;       
 
-        glm::vec3 verts[3]   = { vertices[i0], vertices[i1], vertices[i2] };
-        glm::vec3 normals[3] = { vertexNormals[i0], vertexNormals[i1], vertexNormals[i2] };
-
-        float barycentricCoordinates[3][3] = {
-            {1.0f, 0.0f, 0.0f}, // Entry 1 (1,0,0)
-            {0.0f, 1.0f, 0.0f}, // Entry 2 (0,1,0)
-            {0.0f, 0.0f, 1.0f}  // Entry 3 (0,0,1)
-        };
-
-        for (int j = 0; j < 3; j++) {
-            vertexData.push_back(verts[j].x);
-            vertexData.push_back(verts[j].y);
-            vertexData.push_back(verts[j].z);
-            vertexData.push_back(normals[j].x);
-            vertexData.push_back(normals[j].y);
-            vertexData.push_back(normals[j].z);
-            vertexData.push_back(barycentricCoordinates[j][0]);
-            vertexData.push_back(barycentricCoordinates[j][1]);
-            vertexData.push_back(barycentricCoordinates[j][2]);
+        for (int j = 0; j < 3; j++)
+        {
+            const glm::vec3 &v = vertices[idx[j]];
+            const glm::vec3 &n = vertexNormals[idx[j]];
+            vertexData.push_back(v.x);
+            vertexData.push_back(v.y);
+            vertexData.push_back(v.z);
+            vertexData.push_back(n.x);
+            vertexData.push_back(n.y);
+            vertexData.push_back(n.z);
+            vertexData.push_back(bary[j][0]);
+            vertexData.push_back(bary[j][1]);
+            vertexData.push_back(bary[j][2]);
         }
 
-        // Add indices for the triangle 
+        // Add indices for the triangle
         unsigned int baseIndex = static_cast<unsigned int>(i) * 3;
         indices.push_back(baseIndex);
         indices.push_back(baseIndex + 1);
         indices.push_back(baseIndex + 2);
     }
-
 }
 
-void createRenderingData(unsigned int *VAOs, unsigned int *VBOs, unsigned int *EBOs, const std::vector<float> &phongVertexData, const std::vector<float> &flatVertexData, const std::vector<float> &circleVertexData, const std::vector<unsigned int> &phongIndices, const std::vector<unsigned int> &flatIndices, const std::vector<unsigned int> &circleIndices) {
-    glGenVertexArrays(3, VAOs);
-    glGenBuffers(3, VBOs);
-    glGenBuffers(3, EBOs);
+void createRenderingData(
+    unsigned int *VAOs, 
+    unsigned int *VBOs, 
+    unsigned int *EBOs, 
+    const std::vector<float> &phongData,
+    const std::vector<float> &flatData,
+    const std::vector<float> &baryData,
+    const std::vector<unsigned int> &phongIdx,
+    const std::vector<unsigned int> &flatIdx,
+    const std::vector<unsigned int> &baryIdx)
+{
+    glGenVertexArrays(4, VAOs);
+    glGenBuffers(4, VBOs);
+    glGenBuffers(4, EBOs);
 
-    // Phong VAO
-    glBindVertexArray(VAOs[0]);
-    glBindBuffer(GL_ARRAY_BUFFER, VBOs[0]);
-    glBufferData(GL_ARRAY_BUFFER, phongVertexData.size() * sizeof(float), phongVertexData.data(), GL_STATIC_DRAW);
+    auto uploadBasic = [&](int i, const std::vector<float> &data, const std::vector<unsigned int> &idx)
+    {
+        glBindVertexArray(VAOs[i]);
+        glBindBuffer(GL_ARRAY_BUFFER, VBOs[i]);
+        glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(float), data.data(), GL_STATIC_DRAW);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
+        glEnableVertexAttribArray(1);
 
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBOs[i]);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size() * sizeof(unsigned int), idx.data(), GL_STATIC_DRAW);
+    };
 
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBOs[0]);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, phongIndices.size() * sizeof(unsigned int), phongIndices.data(), GL_STATIC_DRAW);
+    auto uploadBary = [&](int i, const std::vector<float> &data, const std::vector<unsigned int> &idx)
+    {
+        glBindVertexArray(VAOs[i]);
+        glBindBuffer(GL_ARRAY_BUFFER, VBOs[i]);
+        glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(float), data.data(), GL_STATIC_DRAW);
 
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)0);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(3 * sizeof(float)));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(6 * sizeof(float)));
+        glEnableVertexAttribArray(2);
 
-    // Flat VAO
-    glBindVertexArray(VAOs[1]);
-    glBindBuffer(GL_ARRAY_BUFFER, VBOs[1]);
-    glBufferData(GL_ARRAY_BUFFER, flatVertexData.size() * sizeof(float), flatVertexData.data(), GL_STATIC_DRAW);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBOs[i]);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size() * sizeof(unsigned int), idx.data(), GL_STATIC_DRAW);
+    };
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
+    uploadBasic(0, phongData, phongIdx); // Phong
+    uploadBasic(1, flatData,  flatIdx);  // Flat
+    uploadBary (2, baryData,  baryIdx);  // Circle
+    uploadBary (3, baryData,  baryIdx);  // Voronoi (same geometry)
 
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBOs[1]);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, flatIndices.size() * sizeof(unsigned int), flatIndices.data(), GL_STATIC_DRAW);
-
-
-    // Circle VAO
-    glBindVertexArray(VAOs[2]);
-    glBindBuffer(GL_ARRAY_BUFFER, VBOs[2]);
-    glBufferData(GL_ARRAY_BUFFER, circleVertexData.size() * sizeof(float), circleVertexData.data(), GL_STATIC_DRAW);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)0); // position
-    glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)(3 * sizeof(float))); // normal
-    glEnableVertexAttribArray(1);
-
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)(6 * sizeof(float))); // barycentric
-    glEnableVertexAttribArray(2);
-
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBOs[2]);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, circleIndices.size() * sizeof(unsigned int), circleIndices.data(), GL_STATIC_DRAW);
-    
     glBindVertexArray(0);
 }
 
@@ -567,29 +607,28 @@ void A1solution::run(char *filename)
 {
     glm::mat4 modelview, projection;
     int width, height;
-    std::vector<glm::vec3> vertices;
-    std::vector<glm::vec3> triangles;
-    currentShader = 2;
+    std::vector<glm::vec3> vertices, triangles;
 
     readInputFile(filename, modelview, projection, width, height, vertices, triangles);
 
-    std::vector<glm::vec3> phongVertexNormals;
-    std::vector<float> phongVertexData;
-    std::vector<unsigned int> phongIndices;
+    // Build CPU-side vertex data
+    std::vector<glm::vec3> phongNormals;
+    std::vector<float> phongData, flatData, baryData;
+    std::vector<unsigned int> phongIdx, flatIdx, baryIdx;
 
-    phongShader(vertices, triangles, phongVertexNormals, phongVertexData, phongIndices);
+    buildPhongData(vertices, triangles, phongNormals, phongData, phongIdx);
+    buildFlatData(vertices, triangles, flatData, flatIdx);
+    buildBaryData(vertices, triangles, phongNormals, baryData, baryIdx);
 
-    std::vector<glm::vec3> flatFaceNormals;
-    std::vector<float> flatVertexData;
-    std::vector<unsigned int> flatIndices;
-    flatShader(vertices, triangles, flatFaceNormals, flatVertexData, flatIndices);
- 
-    std::vector<float> circleVertexData;
-    std::vector<unsigned int> circleIndices;
-    circleShader(vertices, triangles, phongVertexNormals, circleVertexData, circleIndices); 
-    
+    // State
+    int currentShader = 0;
+    int mode = 0; // 0 for fill, 1 for wireframe
+    bool sKeyDown = false;
+    bool wKeyDown = false;
+
     // Initialize GLFW
-    if (!glfwInit()) {
+    if (!glfwInit())
+    {
         std::cerr << "Failed to initialize GLFW" << std::endl;
         return;
     }
@@ -610,7 +649,6 @@ void A1solution::run(char *filename)
 
     // Make the window's context current and set key callback
     glfwMakeContextCurrent(window);
-    glfwSetKeyCallback(window, keyCallback);
 
     // Initialize GLEW
     glewExperimental = true; // Needed for core profile
@@ -626,16 +664,24 @@ void A1solution::run(char *filename)
     // Grey background
     glClearColor(0.7f, 0.7f, 0.7f, 1.0f);
 
-    // Compile and load shaders
-    int phongShader = compileAndLinkShaders(getVertexShaderPhong(), getFragmentShaderPhong());
-    int flatShader = compileAndLinkShaders(getVertexShaderFlat(), getFragmentShaderFlat());
-    int circleShader = compileAndLinkShaders(getVertexShaderCircle(), getFragmentShaderCircle());
-    int shaderPrograms[] = {phongShader, flatShader, circleShader};
-    int indexCount[] = {static_cast<int>(phongIndices.size()), static_cast<int>(flatIndices.size()), static_cast<int>(circleIndices.size())};
+    // Compile shaders
+    int shaderPrograms[4] = {
+        compileAndLinkShaders(getVertexShaderPhong(), getFragmentShaderPhong()),
+        compileAndLinkShaders(getVertexShaderFlat(),  getFragmentShaderFlat()),
+        compileAndLinkShaders(getVertexShaderBary(),  getFragmentShaderCircle()),
+        compileAndLinkShaders(getVertexShaderBary(),  getFragmentShaderVoronoi())
+    };
+
+    int indexCount[4] = {
+        (int)phongIdx.size(),
+        (int)flatIdx.size(),
+        (int)baryIdx.size(),
+        (int)baryIdx.size()
+    };
 
     // Upload vertex data to GPU
-    unsigned int VAOs[3], VBOs[3], EBOs[3];
-    createRenderingData(VAOs, VBOs, EBOs, phongVertexData, flatVertexData, circleVertexData, phongIndices, flatIndices, circleIndices);
+    unsigned int VAOs[4], VBOs[4], EBOs[4];
+    createRenderingData(VAOs, VBOs, EBOs, phongData, flatData, baryData, phongIdx, flatIdx, baryIdx);
     
     // Entering Main Loop
     while (!glfwWindowShouldClose(window))
@@ -647,29 +693,49 @@ void A1solution::run(char *filename)
 
         // Set shader uniforms
         unsigned int modelLoc = glGetUniformLocation(shaderPrograms[currentShader], "modelview");
-        unsigned int projLoc  = glGetUniformLocation(shaderPrograms[currentShader], "projection");
+        unsigned int projLoc = glGetUniformLocation(shaderPrograms[currentShader], "projection");
         unsigned int normalLoc = glGetUniformLocation(shaderPrograms[currentShader], "normalMat");
         unsigned int lightLoc = glGetUniformLocation(shaderPrograms[currentShader], "lightPos");
         unsigned int lightColorLoc = glGetUniformLocation(shaderPrograms[currentShader], "lightColor");
-        glUniform3f(lightColorLoc, 1.0f, 1.0f, 1.0f); // Set light color to white at full intensity
-
+        
         // Compute normal matrix (transpose of inverse of upper-left 3x3 of modelview)
         glm::mat3 normalMat = glm::transpose(glm::inverse(glm::mat3(modelview)));
-
+        
         // Upload matrices to shader
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelview));
         glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
         glUniformMatrix3fv(normalLoc, 1, GL_FALSE, glm::value_ptr(normalMat));
-
+        
+        glUniform3f(lightColorLoc, 1.0f, 1.0f, 1.0f); // Set light color to white at full intensity
         glUniform3f(lightLoc, 0.0f, 0.0f, 1.0f); // Light position in view space
 
         // Draw the triangles
         glBindVertexArray(VAOs[currentShader]);
         glDrawElements(GL_TRIANGLES, indexCount[currentShader], GL_UNSIGNED_INT, 0);
+        glBindVertexArray(0);
 
         // Swap front and back buffers and poll for events
         glfwSwapBuffers(window);
         glfwPollEvents();
+
+        // Input handling
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+            glfwSetWindowShouldClose(window, true);
+        }
+
+        bool sPressed = glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS;        
+        if (sPressed && !sKeyDown) {
+            currentShader = (currentShader + 1) % 4;
+        }
+        sKeyDown = sPressed;
+
+        bool wPressed = glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS; 
+        if (wPressed && !wKeyDown)
+        {
+            mode = (mode + 1) % 2;
+            glPolygonMode(GL_FRONT_AND_BACK, mode == 0 ? GL_FILL : GL_LINE);
+        }
+        wKeyDown = wPressed;
     }
 
     // Shutdown GLFW
