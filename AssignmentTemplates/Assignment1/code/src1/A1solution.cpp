@@ -111,7 +111,7 @@ const char *getVertexShaderFlat()
         layout(location = 1) in vec3 aNormal;
 
         out vec3 fragPos;
-        flat out vec3 normal; 
+        flat out vec3 normal;  // <-- must match fragment shader
 
         uniform mat4 projection;
         uniform mat4 modelview;
@@ -162,96 +162,8 @@ const char *getFragmentShaderFlat()
     )";
 }
 
-const char *getVertexShaderCircle()
-{
-    return R"(
-    #version 330 core
-    layout(location = 0) in vec3 aPos;
-    layout(location = 1) in vec3 aNormal;
-    layout(location = 2) in vec3 aIncenter;
-    layout(location = 3) in float aInradius;
-
-    out vec3 fragPos;
-
-    out vec3 normal;
-    out vec3 incenter;
-    out float inradius;
-
-    uniform mat4 projection;
-    uniform mat4 modelview;
-    uniform mat3 normalMat;
-
-    void main()
-    {
-        vec4 vertPos4 = modelview * vec4(aPos, 1.0);
-        fragPos = vertPos4.xyz;
-        normal = normalMat * aNormal;
-        incenter = (modelview * vec4(aIncenter, 1.0)).xyz;
-        inradius = aInradius;
-        gl_Position = projection * vertPos4;
-    }
-    )";
-}
-
-const char *getFragmentShaderCircle()
-{
-    return R"(
-    #version 330 core
-    
-    in vec3 fragPos;
-    in vec3 normal;
-    in vec3 incenter;
-    in float inradius;
-
-    out vec4 FragColor;
-
-    uniform vec3 lightPos;
-    uniform vec3 lightColor;
-
-    void main() 
-    {        
-        // Distance check 
-        float dist = length(fragPos - incenter);
-        bool insideCircle = dist < inradius;
-        
-        vec3 norm = normalize(normal);
-        vec3 ambient;
-        vec3 diffuseColor;
-        vec3 specular = vec3(0.0);
-
-        if (insideCircle) 
-        {
-            ambient = vec3(0.1, 0.05, 0.05) * lightColor;
-            diffuseColor = vec3(1.0, 0.5, 0.5);
-        }
-        else
-        {
-            ambient = vec3(0.05, 0.05, 0.1) * lightColor;
-            diffuseColor = vec3(0.5, 0.5, 1.0);
-        }
-
-        vec3 lightDir = normalize(lightPos - fragPos);
-        float diff = max(dot(norm, lightDir), 0.0);
-        vec3 diffuse = diff * lightColor * diffuseColor;
-
-        if (insideCircle)
-        {
-            vec3 viewDir = normalize(-fragPos);
-            vec3 reflectDir = reflect(-lightDir, norm);
-            float spec = pow(max(dot(viewDir, reflectDir), 0.0), 5.0);
-            specular = spec * lightColor * vec3(0.3);
-        }
-        else 
-        {
-            specular = vec3(0.0);
-        }
-
-        FragColor = vec4(ambient + diffuse + specular, 1.0);
-    }
-    )";
-}
-
-const char *getVertexShaderVoronoi()
+// Vertex shader source for Circle and Voronoi 
+const char *getVertexShaderBary()
 {
     return R"(
         #version 330 core
@@ -271,10 +183,71 @@ const char *getVertexShaderVoronoi()
         {
             vec4 vertPos4 = modelview * vec4(aPos, 1.0);
             fragPos = vertPos4.xyz;
-            normal = normalMat * aNormal;
+            normal = normalMat * aNormal;     
             bary = aBary;
             gl_Position = projection * vertPos4;
         }
+    )";
+}
+
+const char *getFragmentShaderCircle()
+{
+    return R"(
+    #version 330 core
+    
+    in vec3 fragPos;
+    in vec3 normal;
+    in vec3 bary;
+
+    out vec4 FragColor;
+
+    uniform vec3 lightPos;
+    uniform vec3 lightColor;
+
+    void main() 
+    {        
+        // Distance from centroid in barycentric space
+        vec3 d = bary - vec3(1.0/3.0);
+        float distFromCenter = dot(d, d); // squared distance
+
+        float radius = 0.17; 
+        bool insideCircle = distFromCenter < radius;
+        
+        vec3 norm = normalize(normal);
+
+        vec3 ambient;
+        vec3 diffuseColor;
+        vec3 specular = vec3(0.0);
+
+        if (insideCircle) 
+        {
+            ambient = vec3(0.05, 0.05, 0.1) * lightColor;
+            diffuseColor = vec3(0.5, 0.5, 1.0);
+        }
+        else
+        {
+            ambient = vec3(0.1, 0.05, 0.05) * lightColor;
+            diffuseColor = vec3(1.0, 0.5, 0.5);
+        }
+
+        vec3 lightDir = normalize(lightPos - fragPos);
+        float diff = max(dot(norm, lightDir), 0.0);
+        vec3 diffuse = diff * lightColor * diffuseColor;
+
+        if (insideCircle)
+        {
+            specular = vec3(0.0);
+        }
+        else 
+        {
+            vec3 viewDir = normalize(-fragPos);
+            vec3 reflectDir = reflect(-lightDir, norm);
+            float spec = pow(max(dot(viewDir, reflectDir), 0.0), 5.0);
+            specular = spec * lightColor * vec3(0.3);
+        }
+
+        FragColor = vec4(ambient + diffuse + specular, 1.0);
+    }
     )";
 }
 
@@ -294,9 +267,9 @@ const char *getFragmentShaderVoronoi()
 
     void main()
     {
+        // Closest vertex = highest barycentric coordinate
         vec3 diffuseColor;
         vec3 ambientColor;
-
         if (bary.x >= bary.y && bary.x >= bary.z)
         {
             diffuseColor = vec3(1.0, 0.5, 0.5);
@@ -324,7 +297,7 @@ const char *getFragmentShaderVoronoi()
         vec3 viewDir = normalize(-fragPos);
         vec3 reflectDir = reflect(-lightDir, norm);
         float spec = pow(max(dot(viewDir, reflectDir), 0.0), 5.0);
-        vec3 specular = spec * lightColor * vec3(0.3, 0.3, 0.3);
+        vec3 specular = spec * lightColor * vec3(0.3);
 
         FragColor = vec4(ambient + diffuse + specular, 1.0);
     }
@@ -387,12 +360,12 @@ int compileAndLinkShaders(const char *vertexShaderSource, const char *fragmentSh
 
 // Function to read input file and populate data structures
 void readInputFile(
-    const char *filename,
-    glm::mat4 &modelview,
-    glm::mat4 &projection,
-    int &width,
-    int &height,
-    std::vector<glm::vec3> &vertices,
+    const char *filename, 
+    glm::mat4 &modelview, 
+    glm::mat4 &projection, 
+    int &width, 
+    int &height, 
+    std::vector<glm::vec3> &vertices, 
     std::vector<glm::vec3> &triangles)
 {
     std::ifstream in(filename);
@@ -445,10 +418,10 @@ void readInputFile(
 }
 
 void buildPhongData(
-    const std::vector<glm::vec3> &vertices,
-    const std::vector<glm::vec3> &triangles,
+    const std::vector<glm::vec3> &vertices, 
+    const std::vector<glm::vec3> &triangles, 
     std::vector<glm::vec3> &vertexNormals,
-    std::vector<float> &vertexData,
+    std::vector<float> &vertexData, 
     std::vector<unsigned int> &indices)
 {
     vertexNormals.assign(vertices.size(), glm::vec3(0.0f));
@@ -487,9 +460,9 @@ void buildPhongData(
 }
 
 void buildFlatData(
-    const std::vector<glm::vec3> &vertices,
-    const std::vector<glm::vec3> &triangles,
-    std::vector<float> &vertexData,
+    const std::vector<glm::vec3> &vertices, 
+    const std::vector<glm::vec3> &triangles, 
+    std::vector<float> &vertexData, 
     std::vector<unsigned int> &indices)
 {
     unsigned int indexCounter = 0;
@@ -530,56 +503,42 @@ void buildFlatData(
     }
 }
 
-void buildCircleData(
-    const std::vector<glm::vec3> &vertices,
+// Circle and Voronoi shaders will use the same vertex data, so we can generate it together
+void buildBaryData(
+    const std::vector<glm::vec3> &vertices, 
     const std::vector<glm::vec3> &triangles,
     std::vector<glm::vec3> &vertexNormals,
-    std::vector<float> &vertexData,
+    std::vector<float> &vertexData, 
     std::vector<unsigned int> &indices)
 {
+    static const float bary[3][3] = {
+        {1.0f, 0.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f},
+        {0.0f, 0.0f, 1.0f}
+    };
+
     for (size_t i = 0; i < triangles.size(); i++)
     {
         // Get triangle vertices
         int idx[3] = {
-            (int)triangles[i].x,
-            (int)triangles[i].y,
-            (int)triangles[i].z};
-        ;
-
-        glm::vec3 v0 = vertices[idx[0]];
-        glm::vec3 v1 = vertices[idx[1]];
-        glm::vec3 v2 = vertices[idx[2]];
-
-        float a = glm::length(v2 - v1);
-        float b = glm::length(v2 - v0);
-        float c = glm::length(v1 - v0);
-
-        glm::vec3 incenter = (a * v0 + b * v1 + c * v2) / (a + b + c);
-        float s = (a + b + c) / 2.0f;
-        float area = glm::length(glm::cross(v1 - v0, v2 - v0)) / 2.0f;
-        float inradius = area / s;
-
-        glm::vec3 verts[3] = {v0, v1, v2};
+            (int)triangles[i].x, 
+            (int)triangles[i].y, 
+            (int)triangles[i].z
+        };;       
 
         for (int j = 0; j < 3; j++)
         {
-            const glm::vec3 &v = verts[j];
+            const glm::vec3 &v = vertices[idx[j]];
             const glm::vec3 &n = vertexNormals[idx[j]];
-
-            // Position (3)
             vertexData.push_back(v.x);
             vertexData.push_back(v.y);
             vertexData.push_back(v.z);
-            // Normal (3)
             vertexData.push_back(n.x);
             vertexData.push_back(n.y);
             vertexData.push_back(n.z);
-            // Incenter (3)
-            vertexData.push_back(incenter.x);
-            vertexData.push_back(incenter.y);
-            vertexData.push_back(incenter.z);
-            // Inradius (1)
-            vertexData.push_back(inradius);
+            vertexData.push_back(bary[j][0]);
+            vertexData.push_back(bary[j][1]);
+            vertexData.push_back(bary[j][2]);
         }
 
         // Add indices for the triangle
@@ -590,62 +549,16 @@ void buildCircleData(
     }
 }
 
-void buildVoronoiData(
-    const std::vector<glm::vec3> &vertices,
-    const std::vector<glm::vec3> &triangles,
-    std::vector<glm::vec3> &vertexNormals,
-    std::vector<float> &vertexData,
-    std::vector<unsigned int> &indices)
-{
-    static const float bary[3][3] = {
-        {1.0f, 0.0f, 0.0f},
-        {0.0f, 1.0f, 0.0f},
-        {0.0f, 0.0f, 1.0f}};
-
-    for (size_t i = 0; i < triangles.size(); i++)
-    {
-        int idx[3] = {
-            (int)triangles[i].x,
-            (int)triangles[i].y,
-            (int)triangles[i].z};
-
-        for (int j = 0; j < 3; j++)
-        {
-            const glm::vec3 &v = vertices[idx[j]];
-            const glm::vec3 &n = vertexNormals[idx[j]];
-            // Position (3)
-            vertexData.push_back(v.x);
-            vertexData.push_back(v.y);
-            vertexData.push_back(v.z);
-            // Normal (3)
-            vertexData.push_back(n.x);
-            vertexData.push_back(n.y);
-            vertexData.push_back(n.z);
-            // Barycentric (3)
-            vertexData.push_back(bary[j][0]);
-            vertexData.push_back(bary[j][1]);
-            vertexData.push_back(bary[j][2]);
-        }
-
-        unsigned int baseIndex = static_cast<unsigned int>(i) * 3;
-        indices.push_back(baseIndex);
-        indices.push_back(baseIndex + 1);
-        indices.push_back(baseIndex + 2);
-    }
-}
-
 void createRenderingData(
-    unsigned int *VAOs,
-    unsigned int *VBOs,
-    unsigned int *EBOs,
+    unsigned int *VAOs, 
+    unsigned int *VBOs, 
+    unsigned int *EBOs, 
     const std::vector<float> &phongData,
     const std::vector<float> &flatData,
-    const std::vector<float> &circleData,
-    const std::vector<float> &voronoiData,
+    const std::vector<float> &baryData,
     const std::vector<unsigned int> &phongIdx,
     const std::vector<unsigned int> &flatIdx,
-    const std::vector<unsigned int> &circleIdx,
-    const std::vector<unsigned int> &voronoiIdx)
+    const std::vector<unsigned int> &baryIdx)
 {
     glGenVertexArrays(4, VAOs);
     glGenBuffers(4, VBOs);
@@ -666,54 +579,27 @@ void createRenderingData(
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size() * sizeof(unsigned int), idx.data(), GL_STATIC_DRAW);
     };
 
-    auto uploadCircle = [&](int i, const std::vector<float> &data, const std::vector<unsigned int> &idx)
+    auto uploadBary = [&](int i, const std::vector<float> &data, const std::vector<unsigned int> &idx)
     {
         glBindVertexArray(VAOs[i]);
         glBindBuffer(GL_ARRAY_BUFFER, VBOs[i]);
         glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(float), data.data(), GL_STATIC_DRAW);
 
-        // Position
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void *)0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)0);
         glEnableVertexAttribArray(0);
-        // Normal
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void *)(3 * sizeof(float)));
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(3 * sizeof(float)));
         glEnableVertexAttribArray(1);
-        // Incenter
-        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void *)(6 * sizeof(float)));
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(6 * sizeof(float)));
         glEnableVertexAttribArray(2);
-        // Inradius
-        glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, 10 * sizeof(float), (void *)(9 * sizeof(float)));
-        glEnableVertexAttribArray(3);
 
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBOs[i]);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size() * sizeof(unsigned int), idx.data(), GL_STATIC_DRAW);
     };
 
-    auto uploadVoronoi = [&](int i, const std::vector<float> &data, const std::vector<unsigned int> &idx)
-    {
-        glBindVertexArray(VAOs[i]);
-        glBindBuffer(GL_ARRAY_BUFFER, VBOs[i]);
-        glBufferData( GL_ARRAY_BUFFER, data.size() * sizeof(float), data.data(), GL_STATIC_DRAW);
-
-        // Position
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)0);
-        glEnableVertexAttribArray(0);
-        // Normal
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(3 * sizeof(float)));
-        glEnableVertexAttribArray(1);
-        // Barycentric
-        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(6 * sizeof(float)));
-        glEnableVertexAttribArray(2);
-
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBOs[i]);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size() * sizeof(unsigned int), idx.data(),
-        GL_STATIC_DRAW);
-    };
-
-    uploadBasic(0, phongData, phongIdx);       // Phong
-    uploadBasic(1, flatData, flatIdx);         // Flat
-    uploadCircle(2, circleData, circleIdx);    // Circle
-    uploadVoronoi(3, voronoiData, voronoiIdx); // Voronoi
+    uploadBasic(0, phongData, phongIdx); // Phong
+    uploadBasic(1, flatData,  flatIdx);  // Flat
+    uploadBary (2, baryData,  baryIdx);  // Circle
+    uploadBary (3, baryData,  baryIdx);  // Voronoi (same geometry)
 
     glBindVertexArray(0);
 }
@@ -728,13 +614,12 @@ void A1solution::run(char *filename)
 
     // Build CPU-side vertex data
     std::vector<glm::vec3> phongNormals;
-    std::vector<float> phongData, flatData, circleData, voronoiData;
-    std::vector<unsigned int> phongIdx, flatIdx, circleIdx, voronoiIdx;
+    std::vector<float> phongData, flatData, baryData;
+    std::vector<unsigned int> phongIdx, flatIdx, baryIdx;
 
     buildPhongData(vertices, triangles, phongNormals, phongData, phongIdx);
     buildFlatData(vertices, triangles, flatData, flatIdx);
-    buildCircleData(vertices, triangles, phongNormals, circleData, circleIdx);
-    buildVoronoiData(vertices, triangles, phongNormals, voronoiData, voronoiIdx);
+    buildBaryData(vertices, triangles, phongNormals, baryData, baryIdx);
 
     // State
     int currentShader = 0;
@@ -783,20 +668,22 @@ void A1solution::run(char *filename)
     // Compile shaders
     int shaderPrograms[4] = {
         compileAndLinkShaders(getVertexShaderPhong(), getFragmentShaderPhong()),
-        compileAndLinkShaders(getVertexShaderFlat(), getFragmentShaderFlat()),
-        compileAndLinkShaders(getVertexShaderCircle(), getFragmentShaderCircle()),
-        compileAndLinkShaders(getVertexShaderVoronoi(), getFragmentShaderVoronoi())};
+        compileAndLinkShaders(getVertexShaderFlat(),  getFragmentShaderFlat()),
+        compileAndLinkShaders(getVertexShaderBary(),  getFragmentShaderCircle()),
+        compileAndLinkShaders(getVertexShaderBary(),  getFragmentShaderVoronoi())
+    };
 
     int indexCount[4] = {
         (int)phongIdx.size(),
         (int)flatIdx.size(),
-        (int)circleIdx.size(),
-        (int)voronoiIdx.size()};
+        (int)baryIdx.size(),
+        (int)baryIdx.size()
+    };
 
     // Upload vertex data to GPU
     unsigned int VAOs[4], VBOs[4], EBOs[4];
-    createRenderingData(VAOs, VBOs, EBOs, phongData, flatData, circleData, voronoiData, phongIdx, flatIdx, circleIdx, voronoiIdx);
-
+    createRenderingData(VAOs, VBOs, EBOs, phongData, flatData, baryData, phongIdx, flatIdx, baryIdx);
+    
     // Entering Main Loop
     while (!glfwWindowShouldClose(window))
     {
@@ -811,17 +698,17 @@ void A1solution::run(char *filename)
         unsigned int normalLoc = glGetUniformLocation(shaderPrograms[currentShader], "normalMat");
         unsigned int lightLoc = glGetUniformLocation(shaderPrograms[currentShader], "lightPos");
         unsigned int lightColorLoc = glGetUniformLocation(shaderPrograms[currentShader], "lightColor");
-
+        
         // Compute normal matrix (transpose of inverse of upper-left 3x3 of modelview)
         glm::mat3 normalMat = glm::transpose(glm::inverse(glm::mat3(modelview)));
-
+        
         // Upload matrices to shader
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(modelview));
         glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
         glUniformMatrix3fv(normalLoc, 1, GL_FALSE, glm::value_ptr(normalMat));
-
+        
         glUniform3f(lightColorLoc, 1.0f, 1.0f, 1.0f); // Set light color to white at full intensity
-        glUniform3f(lightLoc, 0.0f, 0.0f, 1.0f);      // Light position in view space
+        glUniform3f(lightLoc, 0.0f, 0.0f, 1.0f); // Light position in view space
 
         // Draw the triangles
         glBindVertexArray(VAOs[currentShader]);
@@ -833,19 +720,17 @@ void A1solution::run(char *filename)
         glfwPollEvents();
 
         // Input handling
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        {
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
             glfwSetWindowShouldClose(window, true);
         }
 
-        bool sPressed = glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS;
-        if (sPressed && !sKeyDown)
-        {
+        bool sPressed = glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS;        
+        if (sPressed && !sKeyDown) {
             currentShader = (currentShader + 1) % 4;
         }
         sKeyDown = sPressed;
 
-        bool wPressed = glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS;
+        bool wPressed = glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS; 
         if (wPressed && !wKeyDown)
         {
             mode = (mode + 1) % 2;
