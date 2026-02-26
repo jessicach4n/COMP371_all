@@ -257,11 +257,15 @@ const char *getVertexShaderVoronoi()
         #version 330 core
         layout(location = 0) in vec3 aPos;
         layout(location = 1) in vec3 aNormal;
-        layout(location = 2) in vec3 aBary;
+        layout(location = 2) in vec3 aV0;
+        layout(location = 3) in vec3 aV1;
+        layout(location = 4) in vec3 aV2;
 
         out vec3 fragPos;
         out vec3 normal;
-        out vec3 bary;
+        out vec3 v0;
+        out vec3 v1;
+        out vec3 v2;
 
         uniform mat4 projection;
         uniform mat4 modelview;
@@ -272,7 +276,10 @@ const char *getVertexShaderVoronoi()
             vec4 vertPos4 = modelview * vec4(aPos, 1.0);
             fragPos = vertPos4.xyz;
             normal = normalMat * aNormal;
-            bary = aBary;
+            // Transform vertex positions to view space for distance comparison
+            v0 = (modelview * vec4(aV0, 1.0)).xyz;
+            v1 = (modelview * vec4(aV1, 1.0)).xyz;
+            v2 = (modelview * vec4(aV2, 1.0)).xyz;
             gl_Position = projection * vertPos4;
         }
     )";
@@ -285,7 +292,9 @@ const char *getFragmentShaderVoronoi()
 
     in vec3 fragPos;
     in vec3 normal;
-    in vec3 bary;
+    in vec3 v0;
+    in vec3 v1;
+    in vec3 v2;
 
     out vec4 FragColor;
 
@@ -294,22 +303,26 @@ const char *getFragmentShaderVoronoi()
 
     void main()
     {
+        float d0 = length(fragPos - v0);
+        float d1 = length(fragPos - v1);
+        float d2 = length(fragPos - v2);
+
         vec3 diffuseColor;
         vec3 ambientColor;
 
-        if (bary.x >= bary.y && bary.x >= bary.z)
+        if (d0 <= d1 && d0 <= d2)
         {
-            diffuseColor = vec3(1.0, 0.5, 0.5);
+            diffuseColor = vec3(1.0, 0.5, 0.5); // red
             ambientColor = vec3(0.1, 0.05, 0.05);
         }
-        else if (bary.y >= bary.z)
+        else if (d1 <= d2)
         {
-            diffuseColor = vec3(0.5, 1.0, 0.5);
+            diffuseColor = vec3(0.5, 1.0, 0.5); // green
             ambientColor = vec3(0.05, 0.1, 0.05);
         }
         else
         {
-            diffuseColor = vec3(0.5, 0.5, 1.0);
+            diffuseColor = vec3(0.5, 0.5, 1.0); // blue
             ambientColor = vec3(0.05, 0.05, 0.1);
         }
 
@@ -453,6 +466,7 @@ void buildPhongData(
 {
     vertexNormals.assign(vertices.size(), glm::vec3(0.0f));
 
+    // Calculate vertex normals 
     for (auto &t : triangles)
     {
         glm::vec3 v0 = vertices[static_cast<int>(t.x)];
@@ -464,6 +478,7 @@ void buildPhongData(
         vertexNormals[static_cast<int>(t.y)] += faceNormal;
         vertexNormals[static_cast<int>(t.z)] += faceNormal;
     }
+    // Normalize vertex normals
     for (auto &n : vertexNormals)
         n = glm::normalize(n);
 
@@ -597,22 +612,22 @@ void buildVoronoiData(
     std::vector<float> &vertexData,
     std::vector<unsigned int> &indices)
 {
-    static const float bary[3][3] = {
-        {1.0f, 0.0f, 0.0f},
-        {0.0f, 1.0f, 0.0f},
-        {0.0f, 0.0f, 1.0f}};
-
     for (size_t i = 0; i < triangles.size(); i++)
     {
         int idx[3] = {
             (int)triangles[i].x,
             (int)triangles[i].y,
             (int)triangles[i].z};
+          
+        glm::vec3 v0 = vertices[idx[0]];
+        glm::vec3 v1 = vertices[idx[1]];
+        glm::vec3 v2 = vertices[idx[2]];
 
         for (int j = 0; j < 3; j++)
         {
             const glm::vec3 &v = vertices[idx[j]];
             const glm::vec3 &n = vertexNormals[idx[j]];
+
             // Position (3)
             vertexData.push_back(v.x);
             vertexData.push_back(v.y);
@@ -621,10 +636,18 @@ void buildVoronoiData(
             vertexData.push_back(n.x);
             vertexData.push_back(n.y);
             vertexData.push_back(n.z);
-            // Barycentric (3)
-            vertexData.push_back(bary[j][0]);
-            vertexData.push_back(bary[j][1]);
-            vertexData.push_back(bary[j][2]);
+            // Vertex 0 position (3)
+            vertexData.push_back(v0.x);
+            vertexData.push_back(v0.y);
+            vertexData.push_back(v0.z);
+            // Vertex 1 position (3)
+            vertexData.push_back(v1.x);
+            vertexData.push_back(v1.y);
+            vertexData.push_back(v1.z);
+            // Vertex 2 position (3)
+            vertexData.push_back(v2.x);
+            vertexData.push_back(v2.y);
+            vertexData.push_back(v2.z);
         }
 
         unsigned int baseIndex = static_cast<unsigned int>(i) * 3;
@@ -651,14 +674,17 @@ void createRenderingData(
     glGenBuffers(4, VBOs);
     glGenBuffers(4, EBOs);
 
+    // For Phong and Flat
     auto uploadBasic = [&](int i, const std::vector<float> &data, const std::vector<unsigned int> &idx)
     {
         glBindVertexArray(VAOs[i]);
         glBindBuffer(GL_ARRAY_BUFFER, VBOs[i]);
         glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(float), data.data(), GL_STATIC_DRAW);
 
+        // Position
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)0);
         glEnableVertexAttribArray(0);
+        // Normal
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void *)(3 * sizeof(float)));
         glEnableVertexAttribArray(1);
 
@@ -695,25 +721,30 @@ void createRenderingData(
         glBindBuffer(GL_ARRAY_BUFFER, VBOs[i]);
         glBufferData( GL_ARRAY_BUFFER, data.size() * sizeof(float), data.data(), GL_STATIC_DRAW);
 
-        // Position
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)0);
+        // Position attribute at location 0 is 3 floats, stride 15 floats, starts at offset 0
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 15 * sizeof(float), (void *)0);
         glEnableVertexAttribArray(0);
-        // Normal
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(3 * sizeof(float)));
+        // Normal attribute at location 1 is 3 floats, stride 15 floats, starts at offset 3 floats in
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 15 * sizeof(float), (void *)(3 * sizeof(float)));
         glEnableVertexAttribArray(1);
-        // Barycentric
-        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void *)(6 * sizeof(float)));
+        // Vertex 0 position
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 15 * sizeof(float), (void *)(6 * sizeof(float)));
         glEnableVertexAttribArray(2);
+        // Vertex 1 position
+        glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 15 * sizeof(float), (void *)(9 * sizeof(float)));
+        glEnableVertexAttribArray(3);
+        // Vertex 2 position
+        glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 15 * sizeof(float), (void *)(12 * sizeof(float)));
+        glEnableVertexAttribArray(4);
 
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBOs[i]);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size() * sizeof(unsigned int), idx.data(),
-        GL_STATIC_DRAW);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, idx.size() * sizeof(unsigned int), idx.data(), GL_STATIC_DRAW);
     };
 
-    uploadBasic(0, phongData, phongIdx);       // Phong
-    uploadBasic(1, flatData, flatIdx);         // Flat
-    uploadCircle(2, circleData, circleIdx);    // Circle
-    uploadVoronoi(3, voronoiData, voronoiIdx); // Voronoi
+    uploadBasic(0, phongData, phongIdx);       
+    uploadBasic(1, flatData, flatIdx);         
+    uploadCircle(2, circleData, circleIdx);    
+    uploadVoronoi(3, voronoiData, voronoiIdx); 
 
     glBindVertexArray(0);
 }
@@ -726,7 +757,6 @@ void A1solution::run(char *filename)
 
     readInputFile(filename, modelview, projection, width, height, vertices, triangles);
 
-    // Build CPU-side vertex data
     std::vector<glm::vec3> phongNormals;
     std::vector<float> phongData, flatData, circleData, voronoiData;
     std::vector<unsigned int> phongIdx, flatIdx, circleIdx, voronoiIdx;
@@ -736,9 +766,8 @@ void A1solution::run(char *filename)
     buildCircleData(vertices, triangles, phongNormals, circleData, circleIdx);
     buildVoronoiData(vertices, triangles, phongNormals, voronoiData, voronoiIdx);
 
-    // State
     int currentShader = 0;
-    int mode = 0; // 0 for fill, 1 for wireframe
+    int mode = 0; 
     bool sKeyDown = false;
     bool wKeyDown = false;
 
@@ -754,7 +783,7 @@ void A1solution::run(char *filename)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    // Create Window and rendering context using GLFW, resolution is 800x600
+    // Create Window and rendering context using GLFW
     GLFWwindow *window = glfwCreateWindow(width, height, "Comp371 - Assignment 01", NULL, NULL);
     if (window == NULL)
     {
@@ -763,7 +792,7 @@ void A1solution::run(char *filename)
         return;
     }
 
-    // Make the window's context current and set key callback
+    // Make the window's context current
     glfwMakeContextCurrent(window);
 
     // Initialize GLEW
@@ -787,6 +816,7 @@ void A1solution::run(char *filename)
         compileAndLinkShaders(getVertexShaderCircle(), getFragmentShaderCircle()),
         compileAndLinkShaders(getVertexShaderVoronoi(), getFragmentShaderVoronoi())};
 
+    // Store index counts for each shader to use in glDrawElements
     int indexCount[4] = {
         (int)phongIdx.size(),
         (int)flatIdx.size(),
