@@ -9,6 +9,8 @@
 #include "Geometry.h"
 #include "Camera.h"
 #include "Triangle.h"
+#include "PointLight.h"
+#include "AreaLight.h"
 #include "../external/simpleppm.h"
 
 RayTracer::RayTracer(const nlohmann::json &j)
@@ -19,6 +21,7 @@ RayTracer::RayTracer(const nlohmann::json &j)
         outputs.push_back(output);
     }
     parseGeometry(j["geometry"]);
+    parseLights(j["light"]);
 }
 
 // Parses the geometry from the JSON and populates the objects vector
@@ -35,8 +38,18 @@ void RayTracer::parseGeometry(const nlohmann::json &geometryJson)
 
             float radius = geometry["radius"];
 
-            objects.push_back(
-                std::make_unique<Sphere>(centre, radius));
+            auto sphere = std::make_unique<Sphere>(centre, radius);
+
+             // set material properties
+            sphere->material.ka = geometry["ka"];
+            sphere->material.kd = geometry["kd"];
+            sphere->material.ks = geometry["ks"];
+            sphere->material.pc = geometry["pc"];
+            sphere->material.ac = Eigen::Vector3f(geometry["ac"][0], geometry["ac"][1], geometry["ac"][2]);
+            sphere->material.dc = Eigen::Vector3f(geometry["dc"][0], geometry["dc"][1], geometry["dc"][2]);
+            sphere->material.sc = Eigen::Vector3f(geometry["sc"][0], geometry["sc"][1], geometry["sc"][2]);
+
+            objects.push_back(std::move(sphere));
         }
         else if (geometry["type"] == "rectangle")
         {
@@ -47,22 +60,88 @@ void RayTracer::parseGeometry(const nlohmann::json &geometryJson)
             v[2] = Eigen::Vector3f(geometry["p3"][0], geometry["p3"][1], geometry["p3"][2]);
             v[3] = Eigen::Vector3f(geometry["p4"][0], geometry["p4"][1], geometry["p4"][2]);
 
-            // Compute two possible diagonals
-            Eigen::Vector3f d1 = v[2] - v[0];
-            Eigen::Vector3f d2 = v[3] - v[1];
+            // Load material properties
+            Material mat;
+            mat.ka = geometry["ka"];
+            mat.kd = geometry["kd"];
+            mat.ks = geometry["ks"];
+            mat.pc = geometry["pc"];
+            mat.ac = Eigen::Vector3f(geometry["ac"][0], geometry["ac"][1], geometry["ac"][2]);
+            mat.dc = Eigen::Vector3f(geometry["dc"][0], geometry["dc"][1], geometry["dc"][2]);
+            mat.sc = Eigen::Vector3f(geometry["sc"][0], geometry["sc"][1], geometry["sc"][2]);
 
-            Eigen::Vector3f normal = (v[1] - v[0]).cross(v[2] - v[0]);
-            if (normal.dot(Eigen::Vector3f(0, 0, 1)) < 0)
-            {
-                // Flip winding
-                objects.push_back(std::make_unique<Triangle>(v[0], v[2], v[1]));
-                objects.push_back(std::make_unique<Triangle>(v[0], v[3], v[2]));
-            }
-            else
-            {
-                objects.push_back(std::make_unique<Triangle>(v[0], v[1], v[2]));
-                objects.push_back(std::make_unique<Triangle>(v[0], v[2], v[3]));
-            }
+            auto t1 = std::make_unique<Triangle>(v[0], v[1], v[2]);
+            auto t2 = std::make_unique<Triangle>(v[0], v[2], v[3]);
+            t1->material = mat;
+            t2->material = mat;
+
+            objects.push_back(std::move(t1));
+            objects.push_back(std::move(t2));
+        }
+    }
+}
+
+void RayTracer::parseLights(const nlohmann::json &lightsJson)
+{
+    for (const auto &light : lightsJson)
+    {
+        if (light["type"] == "point")
+        {
+            Eigen::Vector3f centre(
+                light["centre"][0],
+                light["centre"][1],
+                light["centre"][2]);
+
+            Eigen::Vector3f id(
+                light["id"][0],
+                light["id"][1],
+                light["id"][2]);
+
+            Eigen::Vector3f is(
+                light["is"][0],
+                light["is"][1],
+                light["is"][2]);
+            
+            bool use = light.value("use", true);
+
+            lights.push_back(std::make_unique<PointLight>(centre, id, is, use));
+        }
+        else if (light["type"] == "area")
+        {
+            Eigen::Vector3f p1(
+                light["p1"][0], 
+                light["p1"][1], 
+                light["p1"][2]);
+
+            Eigen::Vector3f p2(
+                light["p2"][0], 
+                light["p2"][1], 
+                light["p2"][2]);
+
+            Eigen::Vector3f p3(
+                light["p3"][0], 
+                light["p3"][1], 
+                light["p3"][2]);
+
+            Eigen::Vector3f p4(
+                light["p4"][0], 
+                light["p4"][1], 
+                light["p4"][2]);
+            
+            Eigen::Vector3f id(
+                light["id"][0],
+                light["id"][1],
+                light["id"][2]);
+
+            Eigen::Vector3f is(
+                light["is"][0],
+                light["is"][1],
+                light["is"][2]);
+
+            int n = light.value("n", 1);
+            bool usecenter = light.value("usecenter", false);
+
+            lights.push_back(std::make_unique<AreaLight>(p1, p2, p3, p4, id, is, usecenter, n));
         }
     }
 }
@@ -78,16 +157,6 @@ void RayTracer::run()
 
         // Set background color
         backgroundColor = Eigen::Vector3f(output["bkc"][0], output["bkc"][1], output["bkc"][2]);
-
-        // Set hit color to white if background is black, otherwise set it to black
-        if (backgroundColor == Eigen::Vector3f(0.0f, 0.0f, 0.0f))
-        {
-            hitColor = Eigen::Vector3f(1.0f, 1.0f, 1.0f);
-        }
-        else
-        {
-            hitColor = Eigen::Vector3f(0.0f, 0.0f, 0.0f);
-        }
 
         // Initialize camera
         Camera camera(
@@ -129,7 +198,8 @@ void RayTracer::run()
 
                 if (hitAnything)
                 {
-                    color = hitColor;
+                    ai = Eigen::Vector3f(output["ai"][0], output["ai"][1], output["ai"][2]);
+                    color = computeShading(ray, closestHit);                
                 }
                 else
                 {
@@ -145,4 +215,64 @@ void RayTracer::run()
         }
         save_ppm(output["filename"], buffer, width, height);
     }
+}
+
+Eigen::Vector3f RayTracer::computeShading(const Ray& ray, const HitInfo& hit)
+{
+    const Material& material = hit.geometry->material;
+
+    Eigen::Vector3f v = -ray.getDirection().normalized();
+
+    Eigen::Vector3f n = hit.normal.normalized();
+    if (n.dot(v) < 0)
+    {
+        n = -n; // Flip normal if it's facing away from the viewer
+    }
+
+    Eigen::Vector3f color = material.ka * ai.cwiseProduct(material.ac); 
+
+    for (const auto& light : lights) 
+    {
+        Eigen::Vector3f lightPos = light->centre;
+        Eigen::Vector3f toLight = lightPos - hit.position;
+        float distanceToLight = toLight.norm();
+        Eigen::Vector3f l = toLight.normalized();
+
+        if (isInShadow(hit.position, *light)) continue;
+        
+        float nDotL = std::max(0.0f, n.dot(l));
+        Eigen::Vector3f diffuse = material.kd * nDotL * light->id.cwiseProduct(material.dc);
+
+        Eigen::Vector3f h = (l + v).normalized();
+        float nDotH = std::max(0.0f, n.dot(h));
+        Eigen::Vector3f specular = material.ks * std::pow(nDotH, material.pc) * light->is.cwiseProduct(material.sc);
+        color += diffuse + specular;
+    }
+
+    return color.cwiseMin(Eigen::Vector3f(1.0f, 1.0f, 1.0f)); // Clamp color to [0, 1]
+}
+
+bool RayTracer::isInShadow(const Eigen::Vector3f& point, const Light& lightPos)
+{
+    Eigen::Vector3f toLight = lightPos.centre - point;
+    float distanceToLight = toLight.norm();
+    Eigen::Vector3f shadowRayDir = toLight.normalized();
+
+    Ray shadowRay(point + shadowRayDir * 1e-4f, shadowRayDir); // Offset to avoid self-intersection
+
+    HitInfo shadowHit;
+    for (const auto& object : objects)
+    {
+        if(!object->visible) continue; // Skip invisible objects
+        if (object->intersect(shadowRay, shadowHit))
+        {
+            if (shadowHit.t < distanceToLight)
+            {
+                return true; // In shadow
+            }
+        }
+    }
+    
+    // Not in shadow
+    return false; 
 }

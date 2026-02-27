@@ -33,6 +33,7 @@ bool Triangle::intersect(const Ray& ray, HitInfo& hit) const {
         hit.t = t;
         hit.position = ray.getOrigin() + t * ray.getDirection();
         hit.normal = edge1.cross(edge2).normalized();
+        hit.geometry = this;
         return true;
     }
 
