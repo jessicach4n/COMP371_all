@@ -171,6 +171,8 @@ void RayTracer::run()
         size_t pixelCount = static_cast<size_t>(width) * height * 3;
         std::vector<double> buffer(pixelCount);
 
+        ai = Eigen::Vector3f(output["ai"][0], output["ai"][1], output["ai"][2]);
+
         for (int y = 0; y < height; y++)
         {
             for (int x = 0; x < width; x++)
@@ -198,7 +200,6 @@ void RayTracer::run()
 
                 if (hitAnything)
                 {
-                    ai = Eigen::Vector3f(output["ai"][0], output["ai"][1], output["ai"][2]);
                     color = computeShading(ray, closestHit);                
                 }
                 else
@@ -233,7 +234,9 @@ Eigen::Vector3f RayTracer::computeShading(const Ray& ray, const HitInfo& hit)
 
     for (const auto& light : lights) 
     {
-        Eigen::Vector3f lightPos = light->centre;
+        if (!light->use) continue;
+
+        Eigen::Vector3f lightPos = light->getPosition();
         Eigen::Vector3f toLight = lightPos - hit.position;
         float distanceToLight = toLight.norm();
         Eigen::Vector3f l = toLight.normalized();
@@ -258,7 +261,7 @@ bool RayTracer::isInShadow(const Eigen::Vector3f& point, const Light& lightPos)
     float distanceToLight = toLight.norm();
     Eigen::Vector3f shadowRayDir = toLight.normalized();
 
-    Ray shadowRay(point + shadowRayDir * 1e-4f, shadowRayDir); // Offset to avoid self-intersection
+    Ray shadowRay(point + shadowRayDir * 0.1f, shadowRayDir); 
 
     HitInfo shadowHit;
     for (const auto& object : objects)
