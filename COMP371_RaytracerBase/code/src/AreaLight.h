@@ -11,11 +11,12 @@ public:
               const Eigen::Vector3f& p3, const Eigen::Vector3f& p4,
               const Eigen::Vector3f& id, const Eigen::Vector3f& is,
               bool usecenter, int n)
-        : Light(id, is, (p1 + p2 + p3 + p4) / 4.0f, true),
+        : Light(id, is, (p1 + p2 + p3 + p4) / 4.0f, usecenter),
           p1(p1), p2(p2), p3(p3), p4(p4),
           usecenter(usecenter), n(n) {}
 
     Eigen::Vector3f getPosition() const override {
-        return centre;
+        if (usecenter) return centre;
+        else return centre; //  TODO: implement area light 
     }
 };

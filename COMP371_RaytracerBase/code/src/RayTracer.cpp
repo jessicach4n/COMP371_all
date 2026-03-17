@@ -41,13 +41,15 @@ void RayTracer::parseGeometry(const nlohmann::json &geometryJson)
             auto sphere = std::make_unique<Sphere>(centre, radius);
 
              // set material properties
-            sphere->material.ka = geometry["ka"];
-            sphere->material.kd = geometry["kd"];
-            sphere->material.ks = geometry["ks"];
-            sphere->material.pc = geometry["pc"];
-            sphere->material.ac = Eigen::Vector3f(geometry["ac"][0], geometry["ac"][1], geometry["ac"][2]);
-            sphere->material.dc = Eigen::Vector3f(geometry["dc"][0], geometry["dc"][1], geometry["dc"][2]);
-            sphere->material.sc = Eigen::Vector3f(geometry["sc"][0], geometry["sc"][1], geometry["sc"][2]);
+             // coefficients
+            sphere->material.ka = geometry["ka"]; // How much ambient light the surface absorbs
+            sphere->material.kd = geometry["kd"]; // How much it scatters light in all directions
+            sphere->material.ks = geometry["ks"]; // How much it produces shiny highlights
+            sphere->material.pc = geometry["pc"]; // Phong exponent for shininess
+            // colors
+            sphere->material.ac = Eigen::Vector3f(geometry["ac"][0], geometry["ac"][1], geometry["ac"][2]); 
+            sphere->material.dc = Eigen::Vector3f(geometry["dc"][0], geometry["dc"][1], geometry["dc"][2]); 
+            sphere->material.sc = Eigen::Vector3f(geometry["sc"][0], geometry["sc"][1], geometry["sc"][2]); 
 
             objects.push_back(std::move(sphere));
         }
@@ -92,11 +94,13 @@ void RayTracer::parseLights(const nlohmann::json &lightsJson)
                 light["centre"][1],
                 light["centre"][2]);
 
+            // Diffuse intensity
             Eigen::Vector3f id(
                 light["id"][0],
                 light["id"][1],
                 light["id"][2]);
 
+            // Specular intensity
             Eigen::Vector3f is(
                 light["is"][0],
                 light["is"][1],
@@ -108,6 +112,7 @@ void RayTracer::parseLights(const nlohmann::json &lightsJson)
         }
         else if (light["type"] == "area")
         {
+            // Area light source geometry (rectangle)
             Eigen::Vector3f p1(
                 light["p1"][0], 
                 light["p1"][1], 
@@ -128,18 +133,20 @@ void RayTracer::parseLights(const nlohmann::json &lightsJson)
                 light["p4"][1], 
                 light["p4"][2]);
             
+            // Diffuse intensity
             Eigen::Vector3f id(
                 light["id"][0],
                 light["id"][1],
                 light["id"][2]);
 
+            // Specular intensity
             Eigen::Vector3f is(
                 light["is"][0],
                 light["is"][1],
                 light["is"][2]);
 
             int n = light.value("n", 1);
-            bool usecenter = light.value("usecenter", false);
+            bool usecenter = light.value("usecenter", false); 
 
             lights.push_back(std::make_unique<AreaLight>(p1, p2, p3, p4, id, is, usecenter, n));
         }
@@ -167,10 +174,14 @@ void RayTracer::run()
             width,
             height);
 
+        // Check Two-side render flag
+        bool twoSideRender = output.value("twosiderender", true); // default true
+
         // Loop over each pixel in the image
         size_t pixelCount = static_cast<size_t>(width) * height * 3;
         std::vector<double> buffer(pixelCount);
 
+        // Ambient intensity of scene
         ai = Eigen::Vector3f(output["ai"][0], output["ai"][1], output["ai"][2]);
 
         for (int y = 0; y < height; y++)
@@ -200,7 +211,7 @@ void RayTracer::run()
 
                 if (hitAnything)
                 {
-                    color = computeShading(ray, closestHit);                
+                    color = computeShading(ray, closestHit, twoSideRender);                
                 }
                 else
                 {
@@ -218,14 +229,14 @@ void RayTracer::run()
     }
 }
 
-Eigen::Vector3f RayTracer::computeShading(const Ray& ray, const HitInfo& hit)
+Eigen::Vector3f RayTracer::computeShading(const Ray& ray, const HitInfo& hit, const bool twoSideRender)
 {
     const Material& material = hit.geometry->material;
 
     Eigen::Vector3f v = -ray.getDirection().normalized();
 
     Eigen::Vector3f n = hit.normal.normalized();
-    if (n.dot(v) < 0)
+    if (twoSideRender && n.dot(v) < 0)
     {
         n = -n; // Flip normal if it's facing away from the viewer
     }
