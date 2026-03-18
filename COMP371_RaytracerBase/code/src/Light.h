@@ -16,10 +16,12 @@ public:
 
     virtual Eigen::Vector3f getPosition() const = 0; // Pure virtual function to get the position of the light
 
+    // unit vector from hit point toward the light
     virtual Eigen::Vector3f getDirection(const Eigen::Vector3f& point) const {
         return (getPosition() - point).normalized(); 
     }
 
+    // distance from hit point to the light
     virtual float getDistance(const Eigen::Vector3f& point) const {
         return (getPosition() - point).norm();
     }

@@ -16,7 +16,7 @@ public:
           usecenter(usecenter), n(n) {}
 
     Eigen::Vector3f getPosition() const override {
-        if (usecenter) return centre;
+        if (usecenter) return centre; // treat as a point light
         else return centre; //  TODO: implement area light 
     }
 };

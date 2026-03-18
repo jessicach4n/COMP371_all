@@ -8,6 +8,6 @@ public:
         : Light(id, is, centre, use) {}
 
     Eigen::Vector3f getPosition() const override {
-        return centre;
+        return centre; // point light is just a point so position is its centre
     }
 };

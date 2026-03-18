@@ -178,7 +178,7 @@ void RayTracer::run()
         bool twoSideRender = output.value("twosiderender", true); // default true
 
         // Loop over each pixel in the image
-        size_t pixelCount = static_cast<size_t>(width) * height * 3;
+        size_t pixelCount = static_cast<size_t>(width) * height * 3; // Each pixel needs values for RGB
         std::vector<double> buffer(pixelCount);
 
         // Ambient intensity of scene
@@ -191,7 +191,6 @@ void RayTracer::run()
                 // For each pixel
                 Ray ray = camera.generateRay(x, y);
                 HitInfo closestHit;
-                closestHit.t = std::numeric_limits<float>::infinity();
                 bool hitAnything = false;
 
                 for (const auto &object : objects)
@@ -231,32 +230,39 @@ void RayTracer::run()
 
 Eigen::Vector3f RayTracer::computeShading(const Ray& ray, const HitInfo& hit, const bool twoSideRender)
 {
-    const Material& material = hit.geometry->material;
+    const Material& material = hit.geometry->material; // get material properties
 
-    Eigen::Vector3f v = -ray.getDirection().normalized();
+    Eigen::Vector3f v = -ray.getDirection().normalized(); // direction from hit point back towards the camera
 
-    Eigen::Vector3f n = hit.normal.normalized();
+    Eigen::Vector3f n = hit.normal.normalized(); // Surface normal at hit point
+
+    // If two side rendering is on and the normal is facing away from the viewer
     if (twoSideRender && n.dot(v) < 0)
     {
-        n = -n; // Flip normal if it's facing away from the viewer
+        n = -n; // Flip normal so back faces are lit 
     }
 
-    Eigen::Vector3f color = material.ka * ai.cwiseProduct(material.ac); 
+    Eigen::Vector3f color = material.ka * ai.cwiseProduct(material.ac); // Init color with ambient term
 
+    // accumulate diffuse aand specular contributions from each light
     for (const auto& light : lights) 
     {
-        if (!light->use) continue;
+        if (!light->use) continue; // Skip disabled lights (use == false)
 
+        // calculate dir and dist from hit point to light
         Eigen::Vector3f lightPos = light->getPosition();
         Eigen::Vector3f toLight = lightPos - hit.position;
         float distanceToLight = toLight.norm();
-        Eigen::Vector3f l = toLight.normalized();
+        Eigen::Vector3f l = toLight.normalized(); // unit vector toward light
 
-        if (isInShadow(hit.position, *light)) continue;
+        if (isInShadow(hit.position, *light)) continue; // skip light if point is in shadow
         
+        // Diffuse term
         float nDotL = std::max(0.0f, n.dot(l));
         Eigen::Vector3f diffuse = material.kd * nDotL * light->id.cwiseProduct(material.dc);
 
+        // Specular term (Blinn-Phong)
+        // H = halfway vector between thee light direction and view vector
         Eigen::Vector3f h = (l + v).normalized();
         float nDotH = std::max(0.0f, n.dot(h));
         Eigen::Vector3f specular = material.ks * std::pow(nDotH, material.pc) * light->is.cwiseProduct(material.sc);
@@ -268,19 +274,21 @@ Eigen::Vector3f RayTracer::computeShading(const Ray& ray, const HitInfo& hit, co
 
 bool RayTracer::isInShadow(const Eigen::Vector3f& point, const Light& lightPos)
 {
-    Eigen::Vector3f toLight = lightPos.centre - point;
-    float distanceToLight = toLight.norm();
-    Eigen::Vector3f shadowRayDir = toLight.normalized();
+    // Calculate direction and distance from hit point to the light
+    float distanceToLight = lightPos.getDistance(point);
+    Eigen::Vector3f shadowRayDir = lightPos.getDirection(point);
 
+    // Offset to prevent self-intersection
     Ray shadowRay(point + shadowRayDir * 0.1f, shadowRayDir); 
 
+    // Test each objects in scene for intersection with shadow ray
     HitInfo shadowHit;
     for (const auto& object : objects)
     {
         if(!object->visible) continue; // Skip invisible objects
         if (object->intersect(shadowRay, shadowHit))
         {
-            if (shadowHit.t < distanceToLight)
+            if (shadowHit.t < distanceToLight) // Shadow ray hit an object on the way to the light
             {
                 return true; // In shadow
             }

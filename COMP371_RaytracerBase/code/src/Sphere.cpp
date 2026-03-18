@@ -30,6 +30,7 @@ bool Sphere::intersect(const Ray& ray, HitInfo& hit) const {
 	else
 		return false; // both intersections are behind the ray
 
+	// update hit if this intersection is closer than any previous hit
 	if (t_hit < hit.t) {
 		hit.t = t_hit;
 		hit.position = ray.getPointAt(t_hit);
