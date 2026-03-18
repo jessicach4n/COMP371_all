@@ -249,11 +249,8 @@ Eigen::Vector3f RayTracer::computeShading(const Ray& ray, const HitInfo& hit, co
     {
         if (!light->use) continue; // Skip disabled lights (use == false)
 
-        // calculate dir and dist from hit point to light
-        Eigen::Vector3f lightPos = light->getPosition();
-        Eigen::Vector3f toLight = lightPos - hit.position;
-        float distanceToLight = toLight.norm();
-        Eigen::Vector3f l = toLight.normalized(); // unit vector toward light
+        // calculate direction from hit point to light
+        Eigen::Vector3f l = light->getDirection(hit.position); // unit vector toward light
 
         if (isInShadow(hit.position, *light)) continue; // skip light if point is in shadow
         
