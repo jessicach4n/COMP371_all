@@ -749,6 +749,132 @@ void createRenderingData(
     glBindVertexArray(0);
 }
 
+struct AppState {
+    int currentShader;
+    bool mouseButtonDown;
+    double mouseX, mouseY;
+
+    // For picking
+    const std::vector<glm::vec3>* vertices;
+    const std::vector<glm::vec3>* triangles;
+    glm::mat4 modelview;
+    glm::mat4 projection;
+    int width, height;
+};
+
+glm::vec3 projectToScreen(const glm::vec3& vertex, const glm::mat4& modelview, const glm::mat4& projection, int width, int height) 
+{
+    glm::vec4 viewSpace = modelview * glm::vec4(vertex, 1.0f);
+    glm::vec4 clipSpace = projection * viewSpace;
+    glm::vec3 ndc = {clipSpace.x/clipSpace.w, clipSpace.y/clipSpace.w, clipSpace.z/clipSpace.w};
+    glm::vec3 screenSpace = {
+        (ndc.x + 1)/2 * width, 
+        (1 - ndc.y)/2 * height,
+        viewSpace.z
+    }; 
+    return screenSpace;
+}
+
+bool pointInTriangle(glm::vec2 p, glm::vec2 a, glm::vec2 b, glm::vec2 c) 
+{
+    float crossABAP = (b.x - a.x)*(p.y - a.y) - (b.y - a.y)*(p.x - a.x);
+    float crossBCBP = (c.x - b.x)*(p.y - b.y) - (c.y - b.y)*(p.x - b.x);
+    float crossCACP = (a.x - c.x)*(p.y - c.y) - (a.y - c.y)*(p.x - c.x);
+
+    return (crossABAP < 0 && crossBCBP < 0 && crossCACP < 0) || (crossABAP > 0 && crossBCBP > 0 && crossCACP > 0);
+}
+
+glm::vec3 barycentricCoords(glm::vec2 p, glm::vec2 a, glm::vec2 b, glm::vec2 c)
+{
+    float areaABC = (b.x - a.x)*(c.y - a.y) - (b.y - a.y)*(c.x - a.x);
+    float areaPBC = (b.x - p.x)*(c.y - p.y) - (b.y - p.y)*(c.x - p.x);
+    float areaAPC = (p.x - a.x)*(c.y - a.y) - (p.y - a.y)*(c.x - a.x);
+    float areaABP = (b.x - a.x)*(p.y - a.y) - (b.y - a.y)*(p.x - a.x);
+
+    float lambda1 = areaPBC / areaABC;
+    float lambda2 = areaAPC / areaABC;
+    float lambda3 = 1.0f - lambda1 - lambda2;
+
+    return {lambda1, lambda2, lambda3};
+}
+
+void pickTriangle(AppState* state) {
+    // Only pick in Phong mode
+    if (state->currentShader != 0) return;
+
+    glm::vec2 mouse = {(float)state->mouseX, (float)state->mouseY};
+
+    int bestTriangle = -1;
+    float bestZ = -FLT_MAX; //highest (least negative) Z
+    glm::vec3 bestBary;
+    glm::vec3 best3DPoint;
+
+    for (int i = 0; i < state->triangles->size(); i++) {
+        // Get the 3 vertex indices for this triangle
+        int i0 = (int)(*state->triangles)[i].x;
+        int i1 = (int)(*state->triangles)[i].y;
+        int i2 = (int)(*state->triangles)[i].z;
+
+        // Project each vertex to screen space
+        glm::vec3 s0 = projectToScreen((*state->vertices)[i0], state->modelview, state->projection, state->width, state->height);
+        glm::vec3 s1 = projectToScreen((*state->vertices)[i1], state->modelview, state->projection, state->width, state->height);
+        glm::vec3 s2 = projectToScreen((*state->vertices)[i2], state->modelview, state->projection, state->width, state->height);
+    
+        if (pointInTriangle(mouse, s0, s1, s2)) {
+            glm::vec3 bary = barycentricCoords(mouse, s0, s1, s2);
+
+            // Interpolate view space Z for depth comparison
+            float z = bary.x * s0.z + bary.y * s1.z + bary.z * s2.z;
+
+            if (z > bestZ) {
+                bestZ = z;
+                bestTriangle = i;
+                bestBary = bary;
+
+                // Reconstruct 3D point using original vertices
+                best3DPoint = bary.x * (*state->vertices)[i0] +
+                              bary.y * (*state->vertices)[i1] +
+                              bary.z * (*state->vertices)[i2];
+            }
+        }
+    }
+
+    if (bestTriangle != -1) {
+    std::cout << bestTriangle << " "
+                << bestBary.x << " " << bestBary.y << " " << bestBary.z << " "
+                << best3DPoint.x << " " << best3DPoint.y << " " << best3DPoint.z
+                << std::endl;
+    }
+}
+
+void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
+{
+    AppState* state = (AppState*)glfwGetWindowUserPointer(window);
+    if (button == GLFW_MOUSE_BUTTON_LEFT)
+    {
+        if (action == GLFW_PRESS)
+        {
+            state->mouseButtonDown = true;
+            pickTriangle(state);
+        }
+        else if (action == GLFW_RELEASE)
+        {
+            state->mouseButtonDown = false;
+        }
+    }
+}
+
+void cursorPosCallback(GLFWwindow* window, double xpos, double ypos)
+{
+    AppState* state = (AppState*)glfwGetWindowUserPointer(window);
+    state->mouseX = xpos;
+    state->mouseY = ypos;
+    if (state->mouseButtonDown)
+    {
+        pickTriangle(state);
+    }
+}
+
 void A2solution::run(char *filename)
 {
     glm::mat4 modelview, projection;
@@ -766,7 +892,18 @@ void A2solution::run(char *filename)
     buildCircleData(vertices, triangles, phongNormals, circleData, circleIdx);
     buildVoronoiData(vertices, triangles, phongNormals, voronoiData, voronoiIdx);
 
-    int currentShader = 0;
+    AppState state;
+    state.currentShader = 0;
+    state.mouseButtonDown = false;
+    state.mouseX = 0.0;
+    state.mouseY = 0.0;
+    state.vertices = &vertices;
+    state.triangles = &triangles;
+    state.modelview = modelview;
+    state.projection = projection;
+    state.width = width;
+    state.height = height;
+
     int mode = 0; 
     bool sKeyDown = false;
     bool wKeyDown = false;
@@ -794,6 +931,11 @@ void A2solution::run(char *filename)
 
     // Make the window's context current
     glfwMakeContextCurrent(window);
+
+    // Register mouse callbacks for picking
+    glfwSetWindowUserPointer(window, &state);
+    glfwSetMouseButtonCallback(window, mouseButtonCallback);
+    glfwSetCursorPosCallback(window, cursorPosCallback);
 
     // Initialize GLEW
     glewExperimental = true; // Needed for core profile
@@ -833,14 +975,14 @@ void A2solution::run(char *filename)
         // Each frame, reset color and depth of each pixel
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glUseProgram(shaderPrograms[currentShader]); // Use the current shader program
+        glUseProgram(shaderPrograms[state.currentShader]); // Use the current shader program
 
         // Set shader uniforms
-        unsigned int modelLoc = glGetUniformLocation(shaderPrograms[currentShader], "modelview");
-        unsigned int projLoc = glGetUniformLocation(shaderPrograms[currentShader], "projection");
-        unsigned int normalLoc = glGetUniformLocation(shaderPrograms[currentShader], "normalMat");
-        unsigned int lightLoc = glGetUniformLocation(shaderPrograms[currentShader], "lightPos");
-        unsigned int lightColorLoc = glGetUniformLocation(shaderPrograms[currentShader], "lightColor");
+        unsigned int modelLoc = glGetUniformLocation(shaderPrograms[state.currentShader], "modelview");
+        unsigned int projLoc = glGetUniformLocation(shaderPrograms[state.currentShader], "projection");
+        unsigned int normalLoc = glGetUniformLocation(shaderPrograms[state.currentShader], "normalMat");
+        unsigned int lightLoc = glGetUniformLocation(shaderPrograms[state.currentShader], "lightPos");
+        unsigned int lightColorLoc = glGetUniformLocation(shaderPrograms[state.currentShader], "lightColor");
 
         // Compute normal matrix (transpose of inverse of upper-left 3x3 of modelview)
         glm::mat3 normalMat = glm::transpose(glm::inverse(glm::mat3(modelview)));
@@ -854,8 +996,8 @@ void A2solution::run(char *filename)
         glUniform3f(lightLoc, 0.0f, 0.0f, 1.0f);      // Light position in view space
 
         // Draw the triangles
-        glBindVertexArray(VAOs[currentShader]);
-        glDrawElements(GL_TRIANGLES, indexCount[currentShader], GL_UNSIGNED_INT, 0);
+        glBindVertexArray(VAOs[state.currentShader]);
+        glDrawElements(GL_TRIANGLES, indexCount[state.currentShader], GL_UNSIGNED_INT, 0);
         glBindVertexArray(0);
 
         // Swap front and back buffers and poll for events
@@ -871,7 +1013,7 @@ void A2solution::run(char *filename)
         bool sPressed = glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS;
         if (sPressed && !sKeyDown)
         {
-            currentShader = (currentShader + 1) % 4;
+            state.currentShader = (state.currentShader + 1) % 4;
         }
         sKeyDown = sPressed;
 

@@ -779,7 +779,8 @@ CMakeFiles/Assignment2.dir/main.cpp.o: /Users/jessica_chan/Documents/GitHub/COMP
   /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/17/include/ptrcheck.h \
   /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/17/include/stdarg.h \
   /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/17/include/stddef.h \
-  /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/17/include/stdint.h
+  /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/17/include/stdint.h \
+  /Users/jessica_chan/Documents/GitHub/COMP371_all/AssignmentTemplates/Assignment2/code/src/A2solution.h
 
 CMakeFiles/Assignment2.dir/src/A2solution.cpp.o: /Users/jessica_chan/Documents/GitHub/COMP371_all/AssignmentTemplates/Assignment2/code/src/A2solution.cpp \
   /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk/usr/include/Availability.h \
