@@ -48,11 +48,13 @@ const char *getVertexShaderPhong()
 {
     return R"(
         #version 330 core
-        layout(location = 0) in vec3 aPos;
-        layout(location = 1) in vec3 aNormal;
+        // input vertex attributes from VBO
+        layout(location = 0) in vec3 aPos; // vertex pos in model space
+        layout(location = 1) in vec3 aNormal; // vertex normal in model space
 
-        out vec3 fragPos;
-        out vec3 normal;
+        // output passed to fragment shader
+        out vec3 fragPos; // pos in view space
+        out vec3 normal; // normal in view space
 
         uniform mat4 projection;
         uniform mat4 modelview;
@@ -60,9 +62,14 @@ const char *getVertexShaderPhong()
 
         void main()
         {
+            // transform vertex to view space
             vec4 vertPos4 = modelview * vec4(aPos, 1.0);
             fragPos = vertPos4.xyz;
+
+            // transform normal to view space using normal matrix
             normal = normalMat * aNormal;     
+            
+            // final clip-space pos for rasterization
             gl_Position = projection * vertPos4;
         }
     )";
@@ -72,17 +79,18 @@ const char *getFragmentShaderPhong()
 {
     return R"(
     #version 330 core
-    in vec3 fragPos;
-    in vec3 normal;
+
+    in vec3 fragPos; // interpolated view-space pos
+    in vec3 normal; // interpolated view-space normal
 
     out vec4 FragColor;
 
-    uniform vec3 lightPos;
-    uniform vec3 lightColor;
+    uniform vec3 lightPos; // light pos in view space
+    uniform vec3 lightColor; 
 
     void main()
     {
-        vec3 norm = normalize(normal);
+        vec3 norm = normalize(normal); // re-normalize after interpolation
 
         // Ambient
         vec3 ambient = vec3(0.1, 0.05, 0.05) * lightColor;
@@ -111,7 +119,7 @@ const char *getVertexShaderFlat()
         layout(location = 1) in vec3 aNormal;
 
         out vec3 fragPos;
-        flat out vec3 normal; 
+        flat out vec3 normal; // flat makes every pixel in triangle to use the same normal
 
         uniform mat4 projection;
         uniform mat4 modelview;
@@ -303,6 +311,7 @@ const char *getFragmentShaderVoronoi()
 
     void main()
     {
+        // Compute distance from this fragment to each vertices
         float d0 = length(fragPos - v0);
         float d1 = length(fragPos - v1);
         float d2 = length(fragPos - v2);
@@ -310,17 +319,18 @@ const char *getFragmentShaderVoronoi()
         vec3 diffuseColor;
         vec3 ambientColor;
 
+        // closest to v0 = red
         if (d0 <= d1 && d0 <= d2)
         {
             diffuseColor = vec3(1.0, 0.5, 0.5); // red
             ambientColor = vec3(0.1, 0.05, 0.05);
         }
-        else if (d1 <= d2)
+        else if (d1 <= d2) // closest to v1 = green
         {
             diffuseColor = vec3(0.5, 1.0, 0.5); // green
             ambientColor = vec3(0.05, 0.1, 0.05);
         }
-        else
+        else // closest to v2 = blue
         {
             diffuseColor = vec3(0.5, 0.5, 1.0); // blue
             ambientColor = vec3(0.05, 0.05, 0.1);
@@ -474,6 +484,7 @@ void buildPhongData(
         glm::vec3 v2 = vertices[static_cast<int>(t.z)];
 
         glm::vec3 faceNormal = glm::normalize(glm::cross(v1 - v0, v2 - v0));
+        
         vertexNormals[static_cast<int>(t.x)] += faceNormal;
         vertexNormals[static_cast<int>(t.y)] += faceNormal;
         vertexNormals[static_cast<int>(t.z)] += faceNormal;
@@ -762,6 +773,7 @@ struct AppState {
     int width, height;
 };
 
+// Converts a 3D vertex to 2D screen pixel coordinates.
 glm::vec3 projectToScreen(const glm::vec3& vertex, const glm::mat4& modelview, const glm::mat4& projection, int width, int height) 
 {
     glm::vec4 viewSpace = modelview * glm::vec4(vertex, 1.0f);
@@ -775,12 +787,14 @@ glm::vec3 projectToScreen(const glm::vec3& vertex, const glm::mat4& modelview, c
     return screenSpace;
 }
 
+// Checks which side of each edge p falls on. Must be same side for all 3.
 bool pointInTriangle(glm::vec2 p, glm::vec2 a, glm::vec2 b, glm::vec2 c) 
 {
     float crossABAP = (b.x - a.x)*(p.y - a.y) - (b.y - a.y)*(p.x - a.x);
     float crossBCBP = (c.x - b.x)*(p.y - b.y) - (c.y - b.y)*(p.x - b.x);
     float crossCACP = (a.x - c.x)*(p.y - c.y) - (a.y - c.y)*(p.x - c.x);
 
+    // Check all 3 has same sign
     return (crossABAP < 0 && crossBCBP < 0 && crossCACP < 0) || (crossABAP > 0 && crossBCBP > 0 && crossCACP > 0);
 }
 
@@ -847,6 +861,7 @@ void pickTriangle(AppState* state) {
     }
 }
 
+// Called when mouse button is clicked or released.
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
 {
     AppState* state = (AppState*)glfwGetWindowUserPointer(window);
@@ -864,6 +879,7 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
     }
 }
 
+// Called whenever the mouse moves (drag).
 void cursorPosCallback(GLFWwindow* window, double xpos, double ypos)
 {
     AppState* state = (AppState*)glfwGetWindowUserPointer(window);
