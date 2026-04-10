@@ -147,10 +147,49 @@ void RayTracer::parseLights(const nlohmann::json &lightsJson)
 
             int n = light.value("n", 1);
             bool usecenter = light.value("usecenter", false); 
+            bool use = light.value("use", true);
 
-            lights.push_back(std::make_unique<AreaLight>(p1, p2, p3, p4, id, is, usecenter, n));
+            lights.push_back(std::make_unique<AreaLight>(p1, p2, p3, p4, id, is, usecenter, n, use));
         }
     }
+}
+
+// Check if any area light is present and enabled (use == true)
+bool RayTracer::hasAreaLight() const
+{
+    // go throught all the lights and check if any of them is an area light with usecenter == false and use == true
+    for (const auto &light : lights)
+    {
+        const AreaLight *al = dynamic_cast<const AreaLight *>(light.get());
+        if (al && !al->usecenter && light->use)
+            return true;
+    }
+    return false;
+}
+
+// Trace a ray into the scene and compute the color at the intersection point
+Eigen::Vector3f RayTracer::traceRay(
+    const Ray &ray, bool twoSideRender)
+{
+    HitInfo closestHit;
+    bool hitAnything = false;
+
+    for (const auto &object : objects)
+    {
+        HitInfo hit;
+        if (object->intersect(ray, hit) && hit.t < closestHit.t)
+        {
+            closestHit = hit;
+            hitAnything = true;
+        }
+    }
+
+    if (hitAnything) 
+    {
+        return computeShading(ray, closestHit, twoSideRender); 
+    }
+    
+    return backgroundColor;
 }
 
 void RayTracer::run()
@@ -165,6 +204,9 @@ void RayTracer::run()
         // Set background color
         backgroundColor = Eigen::Vector3f(output["bkc"][0], output["bkc"][1], output["bkc"][2]);
 
+        // Set ambient intensity
+        ai = Eigen::Vector3f(output["ai"][0], output["ai"][1], output["ai"][2]);
+
         // Initialize camera
         Camera camera(
             Eigen::Vector3f(output["centre"][0], output["centre"][1], output["centre"][2]),
@@ -176,55 +218,79 @@ void RayTracer::run()
 
         // Check Two-side render flag
         bool twoSideRender = output.value("twosiderender", true); // default true
+        // Check antialiasing flag
+        bool antialiasing   = output.value("antialiasing", false); // default false
 
-        // Loop over each pixel in the image
-        size_t pixelCount = static_cast<size_t>(width) * height * 3; // Each pixel needs values for RGB
+        // if area light present, ignore antialiasing
+        bool useAA = antialiasing && !hasAreaLight();
+
+        // Parse raysperpixel
+        int rppA = 2, rppB = 2, rppC = 1;
+        if (useAA && output.contains("raysperpixel"))
+        {
+            auto rpp = output["raysperpixel"];
+            if (rpp.size() == 1)
+            {
+                rppA = 1;
+                rppB = 1;
+                rppC = rpp[0];
+            }
+            else if (rpp.size() == 2)
+            {
+                rppA = rpp[0];
+                rppB = rpp[0];
+                rppC = rpp[1];
+            }
+            else if (rpp.size() == 3)
+            {
+                rppA = rpp[0];
+                rppB = rpp[1];
+                rppC = rpp[2];
+            }
+        }
+
+        size_t pixelCount = static_cast<size_t>(width) * height * 3;
         std::vector<double> buffer(pixelCount);
-
-        // Ambient intensity of scene
-        ai = Eigen::Vector3f(output["ai"][0], output["ai"][1], output["ai"][2]);
 
         for (int y = 0; y < height; y++)
         {
             for (int x = 0; x < width; x++)
             {
-                // For each pixel
-                Ray ray = camera.generateRay(x, y);
-                HitInfo closestHit;
-                bool hitAnything = false;
+                Eigen::Vector3f color(0.0f, 0.0f, 0.0f);
 
-                for (const auto &object : objects)
+                if (useAA) // If antialiasing is enabled, shoot multiple rays per pixel and average the results
                 {
-                    HitInfo hit;
-                    if (object->intersect(ray, hit))
+                    int totalSamples = rppA * rppB * rppC; // Total number of rays per pixel
+                    for (int gi = 0; gi < rppA; gi++) // grid index for x
                     {
-                        if (hit.t < closestHit.t)
+                        for (int gj = 0; gj < rppB; gj++) // grid index for y
                         {
-                            closestHit = hit;   // update closest hit
-                            hitAnything = true; // mark that we hit something
+                            for (int s = 0; s < rppC; s++) // sample index for multiple samples per grid cell
+                            {
+                                float ru = static_cast<float>(rand()) / RAND_MAX; // random offset for x within the grid cell
+                                float rv = static_cast<float>(rand()) / RAND_MAX; // random offset for y within the grid cell
+                                float offsetX = ((gi + ru) / rppA) - 0.5f;      // offset in range [-0.5, 0.5]
+                                float offsetY = ((gj + rv) / rppB) - 0.5f;      // offset in range [-0.5, 0.5]
+                                Ray ray = camera.generateRay(x + offsetX, y + offsetY); 
+                                color += traceRay(ray, twoSideRender);
+                            }
                         }
                     }
-                }
-
-                Eigen::Vector3f color;
-
-                if (hitAnything)
-                {
-                    color = computeShading(ray, closestHit, twoSideRender);                
+                    color /= static_cast<float>(totalSamples); // Average the color from all samples
                 }
                 else
                 {
-                    color = backgroundColor; // Background color for no hit
+                    color = traceRay(camera.generateRay(x, y), twoSideRender); // No antialiasing, just one ray per pixel
                 }
 
-                // Write color to buffer 
-                size_t idx = 3ull * (static_cast<size_t>(y) * width + x); // Calculate the index for the current pixel
-                buffer[idx + 0] = color.x(); // Red channel
-                buffer[idx + static_cast<size_t>(1)] = color.y(); // Green channel
-                buffer[idx + static_cast<size_t>(2)] = color.z(); // Blue channel
+                size_t idx = 3ull * (static_cast<size_t>(y) * width + x);
+                buffer[idx + 0] = color.x();
+                buffer[idx + 1] = color.y();
+                buffer[idx + 2] = color.z();
             }
         }
         save_ppm(output["filename"], buffer, width, height);
+        
     }
 }
 
@@ -249,49 +315,78 @@ Eigen::Vector3f RayTracer::computeShading(const Ray& ray, const HitInfo& hit, co
     {
         if (!light->use) continue; // Skip disabled lights (use == false)
 
-        // calculate direction from hit point to light
-        Eigen::Vector3f l = light->getDirection(hit.position); // unit vector toward light
+        const AreaLight *al = dynamic_cast<const AreaLight *>(light.get());
 
-        if (isInShadow(hit.position, *light)) continue; // skip light if point is in shadow
-        
-        // Diffuse term
-        float nDotL = std::max(0.0f, n.dot(l));
-        Eigen::Vector3f diffuse = material.kd * nDotL * light->id.cwiseProduct(material.dc);
-
-        // Specular term (Blinn-Phong)
-        // H = halfway vector between thee light direction and view vector
-        Eigen::Vector3f h = (l + v).normalized();
-        float nDotH = std::max(0.0f, n.dot(h));
-        Eigen::Vector3f specular = material.ks * std::pow(nDotH, material.pc) * light->is.cwiseProduct(material.sc);
-        color += diffuse + specular;
-    }
-
-    return color.cwiseMin(Eigen::Vector3f(1.0f, 1.0f, 1.0f)); // Clamp color to [0, 1]
-}
-
-bool RayTracer::isInShadow(const Eigen::Vector3f& point, const Light& lightPos)
-{
-    // Calculate direction and distance from hit point to the light
-    float distanceToLight = lightPos.getDistance(point);
-    Eigen::Vector3f shadowRayDir = lightPos.getDirection(point);
-
-    // Offset to prevent self-intersection
-    Ray shadowRay(point + shadowRayDir * 0.1f, shadowRayDir); 
-
-    // Test each objects in scene for intersection with shadow ray
-    HitInfo shadowHit;
-    for (const auto& object : objects)
-    {
-        if(!object->visible) continue; // Skip invisible objects
-        if (object->intersect(shadowRay, shadowHit))
+        if (al && !al->usecenter)
         {
-            if (shadowHit.t < distanceToLight) // Shadow ray hit an object on the way to the light
+            int gridN = al->n;
+            Eigen::Vector3f gridColor(0.0f, 0.0f, 0.0f);
+            for (int i = 0; i < gridN; i++)
             {
-                return true; // In shadow
+                for (int j = 0; j < gridN; j++)
+                {
+                    Eigen::Vector3f samplePoint = al->getPosition(i, j, gridN);
+                    Eigen::Vector3f toLight = samplePoint - hit.position;
+                    float distanceToLight = toLight.norm();
+                    Eigen::Vector3f l = toLight / distanceToLight; // unit vector toward light with distance attenuation
+
+                    Ray shadowRay(hit.position + l * 1e-4f, l); 
+                    bool inShadow = false;
+                    for (const auto& obj : objects) 
+                    {
+                        if (!obj->visible) continue;
+                        if (obj.get() == hit.geometry) continue; // skip self
+                        HitInfo shadowHit;
+                        if (obj->intersect(shadowRay, shadowHit) && shadowHit.t > 1e-4f && shadowHit.t < distanceToLight) {
+                            inShadow = true;
+                            break;
+                        }
+                    }
+                    if (inShadow) continue;
+
+                    float nDotL = std::max(0.0f, n.dot(l));
+                    Eigen::Vector3f diffuse = material.kd * nDotL * light->id.cwiseProduct(material.dc);
+                    Eigen::Vector3f h = (l + v).normalized();
+                    float nDotH = std::max(0.0f, n.dot(h));
+                    Eigen::Vector3f specular = material.ks * std::pow(nDotH,
+                        material.pc) * light->is.cwiseProduct(material.sc);
+                    gridColor += diffuse + specular;
+                }
             }
+            color += gridColor / static_cast<float>(gridN * gridN); 
+
         }
+        else 
+        {
+            Eigen::Vector3f toLight = light->getPosition() - hit.position;
+            float dist = toLight.norm();
+            Eigen::Vector3f l = toLight / dist; // unit vector toward light with
+
+            Ray shadowRay(hit.position + l * 1e-4f, l);
+            bool blocked = false;
+            for (const auto &obj : objects) {
+                if (!obj->visible) continue;
+                if (obj.get() == hit.geometry) continue; // skip self
+                HitInfo sh;
+                if (obj->intersect(shadowRay, sh) && sh.t > 1e-4f && sh.t < dist)
+                { 
+                    blocked = true; 
+                    break; 
+                }
+            }
+            if (blocked) continue;
+
+            // Diffuse term
+            float nDotL = std::max(0.0f, n.dot(l));
+            Eigen::Vector3f diffuse = material.kd * nDotL * light->id.cwiseProduct(material.dc);
+            // Specular term (Blinn-Phong)
+            // H = halfway vector between thee light direction and view vector
+            Eigen::Vector3f h = (l + v).normalized();
+            float nDotH = std::max(0.0f, n.dot(h));
+            Eigen::Vector3f specular = material.ks * std::pow(nDotH, material.pc) * light->is.cwiseProduct(material.sc);
+
+            color += diffuse + specular;
+        }        
     }
-    
-    // Not in shadow
-    return false; 
+    return color.cwiseMin(Eigen::Vector3f(1.0f, 1.0f, 1.0f)); // Clamp color to [0, 1]
 }

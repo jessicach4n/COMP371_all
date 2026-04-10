@@ -20,7 +20,7 @@ Camera::Camera(
 }
 
 
-Ray Camera::generateRay(int x, int y) const {
+Ray Camera::generateRay(float x, float y) const {
     // Normalize pixel coordinates to [0, 1] 
     // Add 0.5f to center ray on the pixel
     float u = (x + 0.5f) / width;

@@ -24,5 +24,5 @@ public:
         int w,
         int h);
 
-    Ray generateRay(int x, int y) const;
+    Ray generateRay(float x, float y) const;
 };

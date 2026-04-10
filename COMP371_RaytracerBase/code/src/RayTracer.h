@@ -19,7 +19,9 @@ public:
     
 private:
     Eigen::Vector3f computeShading(const Ray& ray, const HitInfo& hit, const bool twoSideRender);
-    bool isInShadow(const Eigen::Vector3f& point, const Light& lightPos);
+
+    bool hasAreaLight() const;
+    Eigen::Vector3f traceRay(const Ray& ray, bool twoSideRender);
 
     void parseGeometry(const nlohmann::json& geometryJson);
 	void parseLights(const nlohmann::json& lightsJson);
